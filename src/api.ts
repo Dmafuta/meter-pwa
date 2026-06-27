@@ -13,6 +13,12 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
       ...(opts.headers as Record<string, string>)
     }
   })
+  if (res.status === 401) {
+    localStorage.removeItem('meter_token')
+    localStorage.removeItem('meter_user')
+    window.dispatchEvent(new Event('meter:auth-expired'))
+    throw new Error('Session expired')
+  }
   const json = await res.json()
   if (!res.ok) throw new Error(json.message ?? 'Request failed')
   return json.data as T
@@ -61,14 +67,16 @@ export function getUnreadMeters(period: string): Promise<UnreadMeter[]> {
 export function submitReading(
   meterId: string,
   currentValue: number,
-  billingPeriod: string
+  billingPeriod: string,
+  photoBase64?: string
 ): Promise<unknown> {
   return apiFetch(`/meters/${meterId}/readings`, {
     method: 'POST',
     body: JSON.stringify({
       current_value: currentValue,
       billing_period: billingPeriod,
-      source: 'manual'
+      source: 'manual',
+      ...(photoBase64 ? { photo_base64: photoBase64 } : {})
     })
   })
 }

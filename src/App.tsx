@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Login from './pages/Login'
 import PeriodSelect from './pages/PeriodSelect'
 import MeterList from './pages/MeterList'
 import ReadingEntry from './pages/ReadingEntry'
+import PendingQueue from './pages/PendingQueue'
 import OfflineBanner from './components/OfflineBanner'
 import type { UnreadMeter } from './api'
 
-type Page = 'login' | 'period' | 'list' | 'entry'
+type Page = 'login' | 'period' | 'list' | 'entry' | 'queue'
 
 export default function App() {
   const [page, setPage] = useState<Page>(() =>
@@ -15,6 +16,12 @@ export default function App() {
   const [period, setPeriod] = useState('')
   const [selectedMeter, setSelectedMeter] = useState<UnreadMeter | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    const handler = () => setPage('login')
+    window.addEventListener('meter:auth-expired', handler)
+    return () => window.removeEventListener('meter:auth-expired', handler)
+  }, [])
 
   function logout() {
     localStorage.removeItem('meter_token')
@@ -40,6 +47,7 @@ export default function App() {
           refreshKey={refreshKey}
           onMeterSelect={m => { setSelectedMeter(m); setPage('entry') }}
           onChangePeriod={() => setPage('period')}
+          onShowQueue={() => setPage('queue')}
           onLogout={logout}
         />
       )}
@@ -50,6 +58,9 @@ export default function App() {
           onSubmitted={() => { setRefreshKey(k => k + 1); setPage('list') }}
           onBack={() => setPage('list')}
         />
+      )}
+      {page === 'queue' && (
+        <PendingQueue onBack={() => setPage('list')} />
       )}
     </div>
   )

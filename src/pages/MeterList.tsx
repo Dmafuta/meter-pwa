@@ -20,12 +20,14 @@ export default function MeterList({
   refreshKey,
   onMeterSelect,
   onChangePeriod,
+  onShowQueue,
   onLogout
 }: {
   period: string
   refreshKey: number
   onMeterSelect: (m: UnreadMeter) => void
   onChangePeriod: () => void
+  onShowQueue: () => void
   onLogout: () => void
 }) {
   const [meters, setMeters] = useState<UnreadMeter[]>([])
@@ -68,12 +70,21 @@ export default function MeterList({
           </button>
         </div>
         <h1 className="text-2xl font-bold">Meter Readings</h1>
-        {!loading && (
-          <p className="text-green-200 text-sm mt-0.5">
-            {meters.length} meter{meters.length !== 1 ? 's' : ''} unread
-            {pending > 0 && ` · ${pending} queued offline`}
-          </p>
-        )}
+        <div className="flex items-center justify-between mt-0.5">
+          {!loading && (
+            <p className="text-green-200 text-sm">
+              {meters.length} meter{meters.length !== 1 ? 's' : ''} unread
+            </p>
+          )}
+          {pending > 0 && (
+            <button
+              onClick={onShowQueue}
+              className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-medium active:bg-white/30"
+            >
+              {pending} queued
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Body */}

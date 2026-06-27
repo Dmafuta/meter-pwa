@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { countPending, listPending, removePending } from '../db'
+import { countPending, listPending, removePending, markFailed } from '../db'
 import { submitReading } from '../api'
 
 export default function OfflineBanner() {
@@ -32,10 +32,11 @@ export default function OfflineBanner() {
     setSyncing(true)
     for (const item of items) {
       try {
-        await submitReading(item.meterId, item.currentValue, item.billingPeriod)
+        await submitReading(item.meterId, item.currentValue, item.billingPeriod, item.photoBase64)
         await removePending(item.id!)
-      } catch {
-        break
+      } catch (err) {
+        // Skip this item and continue — don't block the whole queue
+        await markFailed(item.id!, err instanceof Error ? err.message : 'Unknown error')
       }
     }
     setPending(await countPending())

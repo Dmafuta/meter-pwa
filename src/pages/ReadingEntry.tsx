@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { submitReading, type UnreadMeter } from '../api'
 import { queueReading } from '../db'
 
@@ -20,12 +20,22 @@ export default function ReadingEntry({
   onBack: () => void
 }) {
   const [currentValue, setCurrentValue] = useState('')
+  const [photo, setPhoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   const current = currentValue !== '' ? parseFloat(currentValue) : NaN
   const prev = meter.last_reading ?? 0
   const consumption = !isNaN(current) ? Math.max(0, current - prev) : null
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setPhoto(reader.result as string)
+    reader.readAsDataURL(file)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -38,7 +48,7 @@ export default function ReadingEntry({
     setLoading(true)
     setError('')
     try {
-      await submitReading(meter.id, current, period)
+      await submitReading(meter.id, current, period, photo ?? undefined)
       onSubmitted()
     } catch (err) {
       const isOffline = !navigator.onLine || String(err).includes('Failed to fetch')
@@ -49,6 +59,7 @@ export default function ReadingEntry({
           unitLabel: meter.unit_label,
           currentValue: current,
           billingPeriod: period,
+          photoBase64: photo ?? undefined,
           queuedAt: Date.now()
         })
         onSubmitted()
@@ -127,6 +138,46 @@ export default function ReadingEntry({
               required
               autoFocus
             />
+          </div>
+
+          {/* Photo capture */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Meter Photo <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handlePhotoChange}
+            />
+            {photo ? (
+              <div className="relative">
+                <img src={photo} alt="Meter" className="w-full h-40 object-cover rounded-xl" />
+                <button
+                  type="button"
+                  onClick={() => { setPhoto(null); if (photoInputRef.current) photoInputRef.current.value = '' }}
+                  className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded-lg"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="w-full border-2 border-dashed border-gray-200 rounded-xl py-5 flex flex-col items-center gap-1 text-gray-400 active:border-green-400 active:text-green-600 transition-colors"
+              >
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="text-sm">Take photo</span>
+              </button>
+            )}
           </div>
 
           {!navigator.onLine && (
