@@ -1,0 +1,56 @@
+import { useState } from 'react'
+import Login from './pages/Login'
+import PeriodSelect from './pages/PeriodSelect'
+import MeterList from './pages/MeterList'
+import ReadingEntry from './pages/ReadingEntry'
+import OfflineBanner from './components/OfflineBanner'
+import type { UnreadMeter } from './api'
+
+type Page = 'login' | 'period' | 'list' | 'entry'
+
+export default function App() {
+  const [page, setPage] = useState<Page>(() =>
+    localStorage.getItem('meter_token') ? 'period' : 'login'
+  )
+  const [period, setPeriod] = useState('')
+  const [selectedMeter, setSelectedMeter] = useState<UnreadMeter | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  function logout() {
+    localStorage.removeItem('meter_token')
+    localStorage.removeItem('meter_user')
+    setPage('login')
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <OfflineBanner />
+      {page === 'login' && (
+        <Login onLogin={() => setPage('period')} />
+      )}
+      {page === 'period' && (
+        <PeriodSelect
+          onSelect={p => { setPeriod(p); setPage('list') }}
+          onLogout={logout}
+        />
+      )}
+      {page === 'list' && (
+        <MeterList
+          period={period}
+          refreshKey={refreshKey}
+          onMeterSelect={m => { setSelectedMeter(m); setPage('entry') }}
+          onChangePeriod={() => setPage('period')}
+          onLogout={logout}
+        />
+      )}
+      {page === 'entry' && selectedMeter && (
+        <ReadingEntry
+          meter={selectedMeter}
+          period={period}
+          onSubmitted={() => { setRefreshKey(k => k + 1); setPage('list') }}
+          onBack={() => setPage('list')}
+        />
+      )}
+    </div>
+  )
+}
