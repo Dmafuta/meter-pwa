@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getUnreadMeters, type UnreadMeter } from '../api'
+import { getUnreadMeters, getReadMeters, type UnreadMeter, type ReadMeter } from '../api'
 import { countPending } from '../db'
 
 const UTILITY_BADGE: Record<string, string> = {
@@ -31,6 +31,8 @@ export default function MeterList({
   onLogout: () => void
 }) {
   const [meters, setMeters] = useState<UnreadMeter[]>([])
+  const [readMeters, setReadMeters] = useState<ReadMeter[]>([])
+  const [showRead, setShowRead] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pending, setPending] = useState(0)
@@ -39,8 +41,12 @@ export default function MeterList({
     setLoading(true)
     setError('')
     try {
-      const data = await getUnreadMeters(period)
-      setMeters(data)
+      const [unread, read] = await Promise.all([
+        getUnreadMeters(period),
+        getReadMeters(period)
+      ])
+      setMeters(unread)
+      setReadMeters(read)
     } catch (e: unknown) {
       const status = (e as { status?: number }).status
       if (status === 403) {
@@ -91,9 +97,19 @@ export default function MeterList({
         </div>
         <h1 className="text-2xl font-bold">Meter Readings</h1>
         {!loading && (
-          <p className="text-green-200 text-sm mt-0.5">
-            {meters.length} meter{meters.length !== 1 ? 's' : ''} unread
-          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-green-200 text-sm">
+              {meters.length} unread · {readMeters.length} read
+            </p>
+            {(meters.length + readMeters.length) > 0 && (
+              <div className="flex-1 bg-white/20 rounded-full h-1.5 max-w-[120px]">
+                <div
+                  className="bg-white rounded-full h-1.5 transition-all"
+                  style={{ width: `${Math.round(readMeters.length / (meters.length + readMeters.length) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -138,6 +154,36 @@ export default function MeterList({
                 </svg>
               </button>
             ))}
+
+            {/* Already read section */}
+            {readMeters.length > 0 && (
+              <div className="pt-2">
+                <button
+                  onClick={() => setShowRead(v => !v)}
+                  className="flex items-center gap-2 text-sm font-medium text-gray-400 py-2 w-full"
+                >
+                  <svg className={`w-4 h-4 transition-transform ${showRead ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  {readMeters.length} already read this period
+                </button>
+                {showRead && (
+                  <div className="space-y-2 mt-1">
+                    {readMeters.map(r => (
+                      <div key={r.id} className="bg-white rounded-xl shadow-sm p-4 flex items-center gap-3 opacity-60">
+                        <svg className="w-5 h-5 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-gray-700 truncate">{r.unit_label ?? '—'}</p>
+                          <p className="text-sm text-gray-400 truncate">#{r.meter_number} · {r.current_value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

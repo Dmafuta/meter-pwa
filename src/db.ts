@@ -11,17 +11,21 @@ export interface PendingReading {
   currentValue: number
   billingPeriod: string
   photoBase64?: string
+  notes?: string
+  latitude?: number
+  longitude?: number
   queuedAt: number
   failCount: number
   lastError?: string
 }
 
-const db = openDB(DB_NAME, 2, {
+const db = openDB(DB_NAME, 3, {
   upgrade(d, oldVersion) {
     if (oldVersion < 1) {
       d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true })
     }
-    // v2: adds failCount, lastError, photoBase64 fields — no schema change needed
+    // v2: adds failCount, lastError, photoBase64 — no schema change needed
+    // v3: adds notes, latitude, longitude — no schema change needed
   }
 })
 

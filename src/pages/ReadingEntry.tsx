@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { submitReading, type UnreadMeter } from '../api'
 import { queueReading } from '../db'
 
@@ -24,7 +24,19 @@ export default function ReadingEntry({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null)
+  const [showInaccessible, setShowInaccessible] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  // Silently capture GPS on mount
+  useEffect(() => {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      pos => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => { /* GPS unavailable — not required */ },
+      { timeout: 8000, maximumAge: 60000 }
+    )
+  }, [])
 
   const current = currentValue !== '' ? parseFloat(currentValue) : NaN
   const prev = meter.last_reading ?? 0
@@ -49,7 +61,7 @@ export default function ReadingEntry({
     setLoading(true)
     setError('')
     try {
-      await submitReading(meter.id, current, period, photo ?? undefined)
+      await submitReading(meter.id, current, period, photo ?? undefined, undefined, gps?.lat, gps?.lng)
       setSuccess(true)
       setTimeout(onSubmitted, 1200)
     } catch (err) {
@@ -62,12 +74,46 @@ export default function ReadingEntry({
           currentValue: current,
           billingPeriod: period,
           photoBase64: photo ?? undefined,
+          latitude: gps?.lat,
+          longitude: gps?.lng,
           queuedAt: Date.now()
         })
         setSuccess(true)
         setTimeout(onSubmitted, 1200)
       } else {
         setError(err instanceof Error ? err.message : 'Failed to submit reading')
+        setLoading(false)
+      }
+    }
+  }
+
+  async function handleInaccessible() {
+    setShowInaccessible(false)
+    setLoading(true)
+    setError('')
+    const value = meter.last_reading ?? 0
+    try {
+      await submitReading(meter.id, value, period, undefined, 'Meter inaccessible', gps?.lat, gps?.lng)
+      setSuccess(true)
+      setTimeout(onSubmitted, 1200)
+    } catch (err) {
+      const isOffline = !navigator.onLine || String(err).includes('Failed to fetch')
+      if (isOffline) {
+        await queueReading({
+          meterId: meter.id,
+          meterNumber: meter.meter_number,
+          unitLabel: meter.unit_label,
+          currentValue: value,
+          billingPeriod: period,
+          notes: 'Meter inaccessible',
+          latitude: gps?.lat,
+          longitude: gps?.lng,
+          queuedAt: Date.now()
+        })
+        setSuccess(true)
+        setTimeout(onSubmitted, 1200)
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to submit')
         setLoading(false)
       }
     }
@@ -88,28 +134,19 @@ export default function ReadingEntry({
       </div>
 
       <div className="flex-1 px-4 py-5 space-y-4">
-        {/* Meter info card */}
-        <div className="bg-white rounded-2xl shadow-sm divide-y divide-gray-50">
-          <div className="flex justify-between items-center px-4 py-3">
-            <span className="text-sm text-gray-500">Utility type</span>
-            <span className="text-sm font-medium capitalize text-gray-900">
-              {meter.utility_type.replace('_', ' ')}
-            </span>
-          </div>
-          <div className="flex justify-between items-center px-4 py-3">
-            <span className="text-sm text-gray-500">Previous reading</span>
-            <span className="text-sm font-semibold text-gray-900">
-              {meter.last_reading !== null ? meter.last_reading.toLocaleString() : '—'}
-            </span>
-          </div>
-          <div className="flex justify-between items-center px-4 py-3">
-            <span className="text-sm text-gray-500">Last read on</span>
-            <span className="text-sm font-medium text-gray-900">
-              {meter.last_reading_date ?? 'Never'}
-            </span>
-          </div>
+        {/* Previous reading — prominent */}
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Previous Reading</p>
+          <p className="text-4xl font-bold text-gray-900">
+            {meter.last_reading !== null ? meter.last_reading.toLocaleString() : '—'}
+          </p>
+          <p className="text-sm text-gray-400 mt-1">
+            {meter.last_reading_date ? `Read on ${meter.last_reading_date}` : 'Never read'}
+            {' · '}<span className="capitalize">{meter.utility_type.replace('_', ' ')}</span>
+            {gps && <span className="ml-1 text-green-500">· GPS ✓</span>}
+          </p>
           {consumption !== null && (
-            <div className="flex justify-between items-center px-4 py-3">
+            <div className="mt-3 pt-3 border-t border-gray-50 flex justify-between items-center">
               <span className="text-sm text-gray-500">Consumption</span>
               <span className={`text-sm font-semibold ${consumption > 0 ? 'text-green-700' : 'text-gray-400'}`}>
                 {consumption.toFixed(3)} units
@@ -206,6 +243,39 @@ export default function ReadingEntry({
             {loading ? 'Submitting…' : 'Submit Reading'}
           </button>
         </form>
+
+        {/* Inaccessible */}
+        {!success && (
+          showInaccessible ? (
+            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-3">
+              <p className="text-sm font-semibold text-orange-800">Mark as inaccessible?</p>
+              <p className="text-xs text-orange-700">
+                This will record the previous reading ({meter.last_reading ?? 0}) with a note that the meter could not be accessed.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => void handleInaccessible()}
+                  className="flex-1 bg-orange-500 text-white rounded-xl py-2.5 text-sm font-semibold active:bg-orange-600"
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={() => setShowInaccessible(false)}
+                  className="flex-1 bg-white border border-gray-200 text-gray-700 rounded-xl py-2.5 text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowInaccessible(true)}
+              className="w-full text-sm text-gray-400 py-2 active:text-orange-500"
+            >
+              Can't access this meter?
+            </button>
+          )
+        )}
       </div>
     </div>
   )

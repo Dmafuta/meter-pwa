@@ -74,7 +74,10 @@ export function submitReading(
   meterId: string,
   currentValue: number,
   billingPeriod: string,
-  photoBase64?: string
+  photoBase64?: string,
+  notes?: string,
+  latitude?: number,
+  longitude?: number
 ): Promise<unknown> {
   return apiFetch(`/meters/${meterId}/readings`, {
     method: 'POST',
@@ -82,7 +85,22 @@ export function submitReading(
       current_value: currentValue,
       billing_period: billingPeriod,
       source: 'manual',
-      ...(photoBase64 ? { photo_base64: photoBase64 } : {})
+      ...(photoBase64 ? { photo_base64: photoBase64 } : {}),
+      ...(notes     ? { notes }                       : {}),
+      ...(latitude  != null ? { latitude, longitude } : {}),
     })
   })
+}
+
+export interface ReadMeter {
+  id: string
+  meter_id: string
+  meter_number: string
+  unit_label: string | null
+  current_value: number
+  billing_period: string
+}
+
+export function getReadMeters(period: string): Promise<ReadMeter[]> {
+  return apiFetch(`/meter-readings?period=${encodeURIComponent(period)}`)
 }

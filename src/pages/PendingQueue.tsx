@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { listPending, removePending, type PendingReading } from '../db'
+import { syncPending } from '../sync'
 
 function formatDate(ts: number) {
   return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -7,6 +8,7 @@ function formatDate(ts: number) {
 
 export default function PendingQueue({ onBack }: { onBack: () => void }) {
   const [items, setItems] = useState<PendingReading[]>([])
+  const [syncing, setSyncing] = useState(false)
 
   const load = useCallback(async () => {
     setItems(await listPending())
@@ -19,6 +21,14 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
     await load()
   }
 
+  async function handleSync() {
+    if (syncing || !navigator.onLine) return
+    setSyncing(true)
+    await syncPending()
+    await load()
+    setSyncing(false)
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       {/* Header */}
@@ -29,10 +39,23 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
           </svg>
           Back
         </button>
-        <h1 className="text-2xl font-bold">Queued Readings</h1>
-        <p className="text-green-200 text-sm mt-0.5">
-          {items.length === 0 ? 'All synced' : `${items.length} waiting to sync`}
-        </p>
+        <div className="flex items-end justify-between mt-1">
+          <div>
+            <h1 className="text-2xl font-bold">Queued Readings</h1>
+            <p className="text-green-200 text-sm mt-0.5">
+              {items.length === 0 ? 'All synced' : `${items.length} waiting to sync`}
+            </p>
+          </div>
+          {items.length > 0 && (
+            <button
+              onClick={() => void handleSync()}
+              disabled={syncing || !navigator.onLine}
+              className="text-sm font-semibold bg-white/20 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+            >
+              {syncing ? 'Syncing…' : !navigator.onLine ? 'Offline' : 'Sync now'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 px-4 py-4">
