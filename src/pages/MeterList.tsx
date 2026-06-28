@@ -41,8 +41,15 @@ export default function MeterList({
     try {
       const data = await getUnreadMeters(period)
       setMeters(data)
-    } catch {
-      setError('Could not load meters.')
+    } catch (e: unknown) {
+      const status = (e as { status?: number }).status
+      if (status === 403) {
+        setError('Your account does not have permission to view meters. Contact your administrator.')
+      } else if (status === 401) {
+        setError('Session expired. Please sign in again.')
+      } else {
+        setError('Could not load meters. Check your connection and try again.')
+      }
     } finally {
       setLoading(false)
     }

@@ -17,10 +17,16 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
     localStorage.removeItem('meter_token')
     localStorage.removeItem('meter_user')
     window.dispatchEvent(new Event('meter:auth-expired'))
-    throw new Error('Session expired')
+    const err = new Error('Session expired') as Error & { status: number }
+    err.status = 401
+    throw err
   }
   const json = await res.json()
-  if (!res.ok) throw new Error(json.message ?? 'Request failed')
+  if (!res.ok) {
+    const err = new Error(json.message ?? 'Request failed') as Error & { status: number }
+    err.status = res.status
+    throw err
+  }
   return json.data as T
 }
 
