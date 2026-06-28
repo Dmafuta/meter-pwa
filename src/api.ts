@@ -99,6 +99,9 @@ export interface ReadMeter {
   unit_label: string | null
   current_value: number
   billing_period: string
+  read_by: string | null
+  reading_date: string | null
+  notes: string | null
 }
 
 export function getReadMeters(period: string): Promise<ReadMeter[]> {

@@ -170,13 +170,19 @@ export default function MeterList({
                 {showRead && (
                   <div className="space-y-2 mt-1">
                     {readMeters.map(r => (
-                      <div key={r.id} className="bg-white rounded-xl shadow-sm p-4 flex items-center gap-3 opacity-60">
+                      <div key={r.id} className="bg-white rounded-xl shadow-sm p-4 flex items-center gap-3 opacity-70">
                         <svg className="w-5 h-5 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-gray-700 truncate">{r.unit_label ?? '—'}</p>
                           <p className="text-sm text-gray-400 truncate">#{r.meter_number} · {r.current_value}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {r.read_by ?? 'Unknown'}{r.reading_date ? ` · ${r.reading_date}` : ''}
+                          </p>
+                          {r.notes && (
+                            <p className="text-xs text-orange-500 mt-0.5 truncate">{r.notes}</p>
+                          )}
                         </div>
                       </div>
                     ))}
