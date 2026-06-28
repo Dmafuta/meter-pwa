@@ -5,6 +5,7 @@ import MeterList from './pages/MeterList'
 import ReadingEntry from './pages/ReadingEntry'
 import PendingQueue from './pages/PendingQueue'
 import OfflineBanner from './components/OfflineBanner'
+import InstallPrompt from './components/InstallPrompt'
 import type { UnreadMeter } from './api'
 
 type Page = 'login' | 'period' | 'list' | 'entry' | 'queue'
@@ -32,6 +33,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       <OfflineBanner />
+      <InstallPrompt />
       {page === 'login' && (
         <Login onLogin={() => setPage('period')} />
       )}

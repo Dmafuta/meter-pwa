@@ -65,26 +65,29 @@ export default function MeterList({
             </svg>
             {formatPeriod(period)}
           </button>
-          <button onClick={onLogout} className="text-green-200 text-sm active:text-white">
-            Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={onShowQueue} className="relative text-green-200 active:text-white">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4" />
+              </svg>
+              {pending > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-400 rounded-full text-xs flex items-center justify-center font-bold text-white leading-none">
+                  {pending > 9 ? '9+' : pending}
+                </span>
+              )}
+            </button>
+            <button onClick={onLogout} className="text-green-200 text-sm active:text-white">
+              Sign out
+            </button>
+          </div>
         </div>
         <h1 className="text-2xl font-bold">Meter Readings</h1>
-        <div className="flex items-center justify-between mt-0.5">
-          {!loading && (
-            <p className="text-green-200 text-sm">
-              {meters.length} meter{meters.length !== 1 ? 's' : ''} unread
-            </p>
-          )}
-          {pending > 0 && (
-            <button
-              onClick={onShowQueue}
-              className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-medium active:bg-white/30"
-            >
-              {pending} queued
-            </button>
-          )}
-        </div>
+        {!loading && (
+          <p className="text-green-200 text-sm mt-0.5">
+            {meters.length} meter{meters.length !== 1 ? 's' : ''} unread
+          </p>
+        )}
       </div>
 
       {/* Body */}

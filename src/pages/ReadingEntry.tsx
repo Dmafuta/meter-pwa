@@ -23,6 +23,7 @@ export default function ReadingEntry({
   const [photo, setPhoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
   const current = currentValue !== '' ? parseFloat(currentValue) : NaN
@@ -49,7 +50,8 @@ export default function ReadingEntry({
     setError('')
     try {
       await submitReading(meter.id, current, period, photo ?? undefined)
-      onSubmitted()
+      setSuccess(true)
+      setTimeout(onSubmitted, 1200)
     } catch (err) {
       const isOffline = !navigator.onLine || String(err).includes('Failed to fetch')
       if (isOffline) {
@@ -62,7 +64,8 @@ export default function ReadingEntry({
           photoBase64: photo ?? undefined,
           queuedAt: Date.now()
         })
-        onSubmitted()
+        setSuccess(true)
+        setTimeout(onSubmitted, 1200)
       } else {
         setError(err instanceof Error ? err.message : 'Failed to submit reading')
         setLoading(false)
@@ -186,9 +189,18 @@ export default function ReadingEntry({
             </p>
           )}
 
+          {success && (
+            <div className="flex items-center justify-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl py-3 font-semibold text-sm">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Reading saved!
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={loading || currentValue === ''}
+            disabled={loading || success || currentValue === ''}
             className="w-full bg-green-600 text-white rounded-xl py-4 font-semibold text-lg disabled:opacity-50 active:bg-green-700 transition-colors"
           >
             {loading ? 'Submitting…' : 'Submit Reading'}
