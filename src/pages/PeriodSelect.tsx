@@ -55,8 +55,7 @@ export default function PeriodSelect({
             </span>
             <button
               onClick={() => setPeriod(p => adjustPeriod(p, 1))}
-              disabled={period >= currentPeriod()}
-              className="w-11 h-11 rounded-full border border-gray-200 flex items-center justify-center text-xl text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="w-11 h-11 rounded-full border border-gray-200 flex items-center justify-center text-xl text-gray-500 active:bg-gray-100"
             >
               ›
             </button>
