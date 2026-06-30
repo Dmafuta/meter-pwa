@@ -107,3 +107,35 @@ export interface ReadMeter {
 export function getReadMeters(period: string): Promise<ReadMeter[]> {
   return apiFetch(`/meter-readings?period=${encodeURIComponent(period)}`)
 }
+
+// ── Units ──────────────────────────────────────────────────────────────────────
+
+export interface UnitSummary {
+  id: string
+  unit_label: string
+  unit_type: string
+  status: string
+}
+
+export function listUnits(): Promise<UnitSummary[]> {
+  return apiFetch('/units')
+}
+
+// ── Meter registration ─────────────────────────────────────────────────────────
+
+export interface RegisterMeterPayload {
+  meterNumber: string
+  unitId?: string
+  unitLabel?: string
+  utilityType: string
+  meterType: string
+  meterRole: string
+  lastReading?: number
+  lastReadingDate?: string
+  accountNumber?: string
+  notes?: string
+}
+
+export function registerMeter(payload: RegisterMeterPayload): Promise<{ id: string; meter_number: string }> {
+  return apiFetch('/meters', { method: 'POST', body: JSON.stringify(payload) })
+}

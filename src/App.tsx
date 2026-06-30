@@ -4,11 +4,12 @@ import PeriodSelect from './pages/PeriodSelect'
 import MeterList from './pages/MeterList'
 import ReadingEntry from './pages/ReadingEntry'
 import PendingQueue from './pages/PendingQueue'
+import RegisterMeter from './pages/RegisterMeter'
 import OfflineBanner from './components/OfflineBanner'
 import InstallPrompt from './components/InstallPrompt'
 import type { UnreadMeter } from './api'
 
-type Page = 'login' | 'period' | 'list' | 'entry' | 'queue'
+type Page = 'login' | 'period' | 'list' | 'entry' | 'queue' | 'register'
 
 export default function App() {
   const [page, setPage] = useState<Page>(() =>
@@ -50,6 +51,7 @@ export default function App() {
           onMeterSelect={m => { setSelectedMeter(m); setPage('entry') }}
           onChangePeriod={() => setPage('period')}
           onShowQueue={() => setPage('queue')}
+          onRegister={() => setPage('register')}
           onLogout={logout}
         />
       )}
@@ -63,6 +65,9 @@ export default function App() {
       )}
       {page === 'queue' && (
         <PendingQueue onBack={() => setPage('list')} />
+      )}
+      {page === 'register' && (
+        <RegisterMeter onBack={() => setPage('list')} />
       )}
     </div>
   )
