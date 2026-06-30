@@ -2,12 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { listUnits, registerMeter, type UnitSummary } from '../api'
 
 const UTILITY_TYPES = [
-  { value: 'water',       label: '💧 Water' },
-  { value: 'water_sewer', label: '💧 Water & Sewerage' },
-  { value: 'sewerage',    label: '🚰 Sewerage' },
-  { value: 'electricity', label: '⚡ Electricity' },
-  { value: 'gas_piped',   label: '🔥 Gas (Piped)' },
-  { value: 'internet',    label: '📶 Internet' },
+  { value: 'water',       label: 'Water' },
+  { value: 'water_sewer', label: 'Water & Sewerage' },
+  { value: 'sewerage',    label: 'Sewerage' },
 ]
 
 const METER_ROLES = [
@@ -50,19 +47,19 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
   const isConsumer = meterRole === 'consumer'
 
   useEffect(() => {
+    if (!isConsumer) { setUnits([]); return }
     setLoadingUnits(true)
-    listUnits()
-      .then(setUnits)
+    setSelectedUnit(null)
+    setUnitSearch('')
+    listUnits(utilityType)
+      .then(u => setUnits(u.sort((a, b) => a.unit_label.localeCompare(b.unit_label))))
       .catch(() => {})
       .finally(() => setLoadingUnits(false))
-  }, [])
+  }, [isConsumer, utilityType])
 
-  const filteredUnits = unitSearch.trim().length >= 1
-    ? units.filter(u =>
-        u.unit_label.toLowerCase().includes(unitSearch.toLowerCase()) ||
-        u.status === 'occupied' || u.status === 'vacant'
-      ).slice(0, 10)
-    : []
+  const filteredUnits = units
+    .filter(u => unitSearch.trim() === '' || u.unit_label.toLowerCase().includes(unitSearch.toLowerCase()))
+    .slice(0, 20)
 
   // ── Barcode scanning ──────────────────────────────────────────────────────
 
@@ -300,7 +297,7 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
                   value={unitSearch}
                   onChange={e => { setUnitSearch(e.target.value); setShowUnitList(true) }}
                   onFocus={() => setShowUnitList(true)}
-                  placeholder={loadingUnits ? 'Loading units…' : 'Search unit label (e.g. A101)'}
+                  placeholder={loadingUnits ? 'Loading units…' : units.length === 0 ? 'No unmetered units available' : `Search or tap to pick (${units.length} available)`}
                   className={INPUT}
                 />
                 {showUnitList && filteredUnits.length > 0 && (

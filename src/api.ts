@@ -117,8 +117,9 @@ export interface UnitSummary {
   status: string
 }
 
-export function listUnits(): Promise<UnitSummary[]> {
-  return apiFetch('/units')
+export function listUnits(noMeterForUtility?: string): Promise<UnitSummary[]> {
+  const qs = noMeterForUtility ? `?noMeterForUtility=${encodeURIComponent(noMeterForUtility)}` : ''
+  return apiFetch(`/units${qs}`)
 }
 
 // ── Meter registration ─────────────────────────────────────────────────────────
