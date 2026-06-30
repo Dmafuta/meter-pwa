@@ -11,10 +11,16 @@ import type { UnreadMeter } from './api'
 
 type Page = 'login' | 'period' | 'list' | 'entry' | 'queue' | 'register'
 
+function getStoredRole(): string {
+  try { return JSON.parse(localStorage.getItem('meter_user') ?? '{}').role ?? '' }
+  catch { return '' }
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>(() =>
     localStorage.getItem('meter_token') ? 'period' : 'login'
   )
+  const [userRole, setUserRole] = useState(getStoredRole)
   const [period, setPeriod] = useState('')
   const [selectedMeter, setSelectedMeter] = useState<UnreadMeter | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -28,6 +34,7 @@ export default function App() {
   function logout() {
     localStorage.removeItem('meter_token')
     localStorage.removeItem('meter_user')
+    setUserRole('')
     setPage('login')
   }
 
@@ -36,7 +43,7 @@ export default function App() {
       <OfflineBanner />
       <InstallPrompt />
       {page === 'login' && (
-        <Login onLogin={() => setPage('period')} />
+        <Login onLogin={() => { setUserRole(getStoredRole()); setPage('period') }} />
       )}
       {page === 'period' && (
         <PeriodSelect
@@ -51,7 +58,7 @@ export default function App() {
           onMeterSelect={m => { setSelectedMeter(m); setPage('entry') }}
           onChangePeriod={() => setPage('period')}
           onShowQueue={() => setPage('queue')}
-          onRegister={() => setPage('register')}
+          onRegister={userRole === 'field_technician' ? () => setPage('register') : undefined}
           onLogout={logout}
         />
       )}
