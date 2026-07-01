@@ -2,7 +2,9 @@ import { useState } from 'react'
 
 function currentPeriod(): string {
   const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  // Default to previous month — readings taken at start of month bill the prior month's consumption
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 function formatPeriod(p: string): string {
