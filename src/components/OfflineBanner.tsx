@@ -17,7 +17,7 @@ export default function OfflineBanner() {
 
   // Refresh pending count whenever online status changes
   useEffect(() => {
-    countPending().then(setPending)
+    countPending().then(setPending).catch(() => setPending(0))
   }, [online])
 
   // Auto-sync when coming back online
