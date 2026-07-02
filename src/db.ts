@@ -19,18 +19,27 @@ export interface PendingReading {
   lastError?: string
 }
 
-const db = openDB(DB_NAME, 3, {
-  upgrade(d, oldVersion) {
-    if (oldVersion < 1) {
-      d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true })
-    }
-    // v2: adds failCount, lastError, photoBase64 — no schema change needed
-    // v3: adds notes, latitude, longitude — no schema change needed
+function openDb() {
+  try {
+    return openDB(DB_NAME, 3, {
+      upgrade(d, oldVersion) {
+        if (oldVersion < 1) {
+          d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true })
+        }
+        // v2: adds failCount, lastError, photoBase64 — no schema change needed
+        // v3: adds notes, latitude, longitude — no schema change needed
+      }
+    }).catch(err => {
+      console.warn('[meter-pwa] IndexedDB unavailable — offline queue disabled:', err)
+      return null as never
+    })
+  } catch (err) {
+    console.warn('[meter-pwa] IndexedDB not supported — offline queue disabled:', err)
+    return Promise.resolve(null as never)
   }
-}).catch(err => {
-  console.warn('[meter-pwa] IndexedDB unavailable — offline queue disabled:', err)
-  return null as never
-})
+}
+
+const db = openDb()
 
 export async function queueReading(r: Omit<PendingReading, 'id' | 'failCount'>): Promise<void> {
   const store = await db
