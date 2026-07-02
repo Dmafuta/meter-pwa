@@ -66,8 +66,11 @@ export interface UnreadMeter {
   last_reading_date: string | null
 }
 
-export function getUnreadMeters(period: string): Promise<UnreadMeter[]> {
-  return apiFetch(`/reports/unread-meters?period=${encodeURIComponent(period)}`)
+export async function getUnreadMeters(period: string): Promise<UnreadMeter[]> {
+  const data = await apiFetch<{ content: UnreadMeter[] }>(
+    `/reports/unread-meters?period=${encodeURIComponent(period)}&size=9999`
+  )
+  return data.content
 }
 
 export function submitReading(
