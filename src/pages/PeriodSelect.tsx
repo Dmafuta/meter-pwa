@@ -21,13 +21,18 @@ function adjustPeriod(p: string, delta: number): string {
 
 export default function PeriodSelect({
   onSelect,
-  onLogout
+  onLogout,
+  activePeriod,
 }: {
   onSelect: (p: string) => void
   onLogout: () => void
+  activePeriod: string | null
 }) {
-  const [period, setPeriod] = useState(currentPeriod)
-  const user: { fullName?: string } = JSON.parse(localStorage.getItem('meter_user') ?? '{}')
+  const user: { fullName?: string; role?: string } = JSON.parse(localStorage.getItem('meter_user') ?? '{}')
+  const isFieldTech = user.role === 'field_technician'
+  // Field technicians keep free navigation; other roles are locked to the active period if set
+  const locked = !isFieldTech && activePeriod != null
+  const [period, setPeriod] = useState(() => (locked ? activePeriod : currentPeriod()))
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
@@ -45,23 +50,32 @@ export default function PeriodSelect({
         <div className="bg-white rounded-2xl shadow-sm p-6">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Billing Period</p>
 
-          <div className="flex items-center justify-between gap-3 mb-6">
-            <button
-              onClick={() => setPeriod(p => adjustPeriod(p, -1))}
-              className="w-11 h-11 rounded-full border border-gray-200 flex items-center justify-center text-xl text-gray-500 active:bg-gray-100"
-            >
-              ‹
-            </button>
-            <span className="text-xl font-semibold text-gray-900 flex-1 text-center">
-              {formatPeriod(period)}
-            </span>
-            <button
-              onClick={() => setPeriod(p => adjustPeriod(p, 1))}
-              className="w-11 h-11 rounded-full border border-gray-200 flex items-center justify-center text-xl text-gray-500 active:bg-gray-100"
-            >
-              ›
-            </button>
-          </div>
+          {locked ? (
+            <div className="flex flex-col items-center gap-2 mb-6">
+              <span className="text-xl font-semibold text-gray-900">{formatPeriod(period)}</span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold">
+                🔒 Period locked by admin
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3 mb-6">
+              <button
+                onClick={() => setPeriod(p => adjustPeriod(p, -1))}
+                className="w-11 h-11 rounded-full border border-gray-200 flex items-center justify-center text-xl text-gray-500 active:bg-gray-100"
+              >
+                ‹
+              </button>
+              <span className="text-xl font-semibold text-gray-900 flex-1 text-center">
+                {formatPeriod(period)}
+              </span>
+              <button
+                onClick={() => setPeriod(p => adjustPeriod(p, 1))}
+                className="w-11 h-11 rounded-full border border-gray-200 flex items-center justify-center text-xl text-gray-500 active:bg-gray-100"
+              >
+                ›
+              </button>
+            </div>
+          )}
 
           <button
             onClick={() => onSelect(period)}

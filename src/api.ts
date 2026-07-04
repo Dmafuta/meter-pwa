@@ -111,6 +111,15 @@ export function getReadMeters(period: string): Promise<ReadMeter[]> {
   return apiFetch(`/meter-readings?period=${encodeURIComponent(period)}`)
 }
 
+export async function getActivePeriod(): Promise<string | null> {
+  try {
+    const data = await apiFetch<{ activePeriod: string | null }>('/meter-readings/active-period')
+    return data.activePeriod ?? null
+  } catch {
+    return null
+  }
+}
+
 // ── Units ──────────────────────────────────────────────────────────────────────
 
 export interface UnitSummary {

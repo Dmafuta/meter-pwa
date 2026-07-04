@@ -7,6 +7,7 @@ import PendingQueue from './pages/PendingQueue'
 import RegisterMeter from './pages/RegisterMeter'
 import OfflineBanner from './components/OfflineBanner'
 import InstallPrompt from './components/InstallPrompt'
+import { getActivePeriod } from './api'
 import type { UnreadMeter } from './api'
 
 type Page = 'login' | 'period' | 'list' | 'entry' | 'queue' | 'register'
@@ -22,11 +23,19 @@ export default function App() {
   )
   const [userRole, setUserRole] = useState(getStoredRole)
   const [period, setPeriod] = useState('')
+  const [activePeriod, setActivePeriod] = useState<string | null>(null)
   const [selectedMeter, setSelectedMeter] = useState<UnreadMeter | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
+  // Fetch active period whenever we reach the period selection screen
   useEffect(() => {
-    const handler = () => setPage('login')
+    if (page === 'period' && localStorage.getItem('meter_token')) {
+      getActivePeriod().then(setActivePeriod).catch(() => {})
+    }
+  }, [page])
+
+  useEffect(() => {
+    const handler = () => { setActivePeriod(null); setPage('login') }
     window.addEventListener('meter:auth-expired', handler)
     return () => window.removeEventListener('meter:auth-expired', handler)
   }, [])
@@ -49,6 +58,7 @@ export default function App() {
         <PeriodSelect
           onSelect={p => { setPeriod(p); setPage('list') }}
           onLogout={logout}
+          activePeriod={activePeriod}
         />
       )}
       {page === 'list' && (
