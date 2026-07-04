@@ -80,7 +80,9 @@ export function submitReading(
   photoBase64?: string,
   notes?: string,
   latitude?: number,
-  longitude?: number
+  longitude?: number,
+  sealNumber?: string,
+  tampered?: boolean
 ): Promise<unknown> {
   return apiFetch(`/meters/${meterId}/readings`, {
     method: 'POST',
@@ -88,9 +90,11 @@ export function submitReading(
       current_value: currentValue,
       billing_period: billingPeriod,
       source: 'manual',
-      ...(photoBase64 ? { photo_base64: photoBase64 } : {}),
-      ...(notes     ? { notes }                       : {}),
-      ...(latitude  != null ? { latitude, longitude } : {}),
+      ...(photoBase64  ? { photo_base64: photoBase64 } : {}),
+      ...(notes        ? { notes }                      : {}),
+      ...(latitude  != null ? { latitude, longitude }   : {}),
+      ...(sealNumber   ? { seal_number: sealNumber }    : {}),
+      ...(tampered     ? { tampered: true }             : {}),
     })
   })
 }
@@ -168,4 +172,46 @@ export interface RegisterMeterPayload {
 
 export function registerMeter(payload: RegisterMeterPayload): Promise<{ id: string; meter_number: string }> {
   return apiFetch('/meters', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+// ── Supervisor ────────────────────────────────────────────────────────────────
+
+export interface ReadingProgress {
+  period: string
+  total_active_meters: number
+  total_read: number
+  total_unread: number
+  completion_pct: number
+  anomaly_count: number
+  tampered_count: number
+  by_reader: { reader_name: string; read_count: number }[]
+}
+
+export function getReadingProgress(period: string): Promise<ReadingProgress> {
+  return apiFetch(`/reports/reading-progress?period=${encodeURIComponent(period)}`)
+}
+
+export interface ReaderPerformance {
+  reader_name: string
+  readings_count: number
+  anomaly_count: number
+  tampered_count: number
+  inaccessible_count: number
+}
+
+export function getReaderPerformance(period: string): Promise<ReaderPerformance[]> {
+  return apiFetch(`/reports/reader-performance?period=${encodeURIComponent(period)}`)
+}
+
+export interface AssignedMeter {
+  id: string
+  meter_number: string
+  unit_label: string
+  utility_type: string
+  status: string
+  sort_order: number
+}
+
+export function getMyAssignments(period: string): Promise<AssignedMeter[]> {
+  return apiFetch(`/reading-assignments/mine?period=${encodeURIComponent(period)}`)
 }

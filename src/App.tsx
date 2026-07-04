@@ -5,17 +5,20 @@ import MeterList from './pages/MeterList'
 import ReadingEntry from './pages/ReadingEntry'
 import PendingQueue from './pages/PendingQueue'
 import RegisterMeter from './pages/RegisterMeter'
+import SupervisorDashboard from './pages/SupervisorDashboard'
 import OfflineBanner from './components/OfflineBanner'
 import InstallPrompt from './components/InstallPrompt'
 import { getActivePeriod } from './api'
 import type { UnreadMeter } from './api'
 
-type Page = 'login' | 'period' | 'list' | 'entry' | 'queue' | 'register'
+type Page = 'login' | 'period' | 'list' | 'entry' | 'queue' | 'register' | 'supervisor'
 
 function getStoredRole(): string {
   try { return JSON.parse(localStorage.getItem('meter_user') ?? '{}').role ?? '' }
   catch { return '' }
 }
+
+const SUPERVISOR_ROLES = ['supervisor', 'meter_supervisor', 'facility_manager', 'admin']
 
 export default function App() {
   const [page, setPage]               = useState<Page>(() =>
@@ -56,7 +59,7 @@ export default function App() {
   function handlePeriodSelect(p: string) {
     setPeriod(p)
     setSessionStart(Date.now())
-    setPage('list')
+    setPage(SUPERVISOR_ROLES.includes(userRole) ? 'supervisor' : 'list')
   }
 
   function handleMeterSelect(m: UnreadMeter, list: UnreadMeter[], index: number) {
@@ -129,6 +132,14 @@ export default function App() {
 
       {page === 'register' && (
         <RegisterMeter onBack={() => setPage('list')} />
+      )}
+
+      {page === 'supervisor' && (
+        <SupervisorDashboard
+          period={period}
+          onChangePeriod={() => setPage('period')}
+          onLogout={logout}
+        />
       )}
     </div>
   )

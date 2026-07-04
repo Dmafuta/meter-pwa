@@ -48,6 +48,8 @@ export default function ReadingEntry({
   const [currentValue, setCurrentValue]     = useState('')
   const [notes, setNotes]                   = useState('')
   const [showNotes, setShowNotes]           = useState(false)
+  const [sealNumber, setSealNumber]         = useState('')
+  const [tampered, setTampered]             = useState(false)
   const [photo, setPhoto]                   = useState<string | null>(null)
   const [loading, setLoading]               = useState(false)
   const [error, setError]                   = useState('')
@@ -121,7 +123,8 @@ export default function ReadingEntry({
     setLoading(true)
     setError('')
     try {
-      await submitReading(meter.id, current, period, photo ?? undefined, notes || undefined, gps?.lat, gps?.lng)
+      await submitReading(meter.id, current, period, photo ?? undefined, notes || undefined,
+        gps?.lat, gps?.lng, sealNumber || undefined, tampered || undefined)
       setSuccess(true)
       setShowConfirm(false)
       setTimeout(onSubmitted, 1200)
@@ -132,7 +135,9 @@ export default function ReadingEntry({
           meterId: meter.id, meterNumber: meter.meter_number, unitLabel: meter.unit_label,
           currentValue: current, billingPeriod: period,
           photoBase64: photo ?? undefined, notes: notes || undefined,
-          latitude: gps?.lat, longitude: gps?.lng, queuedAt: Date.now(),
+          latitude: gps?.lat, longitude: gps?.lng,
+          sealNumber: sealNumber || undefined, tampered: tampered || undefined,
+          queuedAt: Date.now(),
         })
         setSuccess(true)
         setShowConfirm(false)
@@ -208,6 +213,16 @@ export default function ReadingEntry({
               </div>
             )}
 
+            {sealNumber.trim() && (
+              <div className="bg-gray-50 rounded-xl px-3 py-2">
+                <p className="text-xs text-gray-600 font-medium">Seal: {sealNumber.trim()}</p>
+              </div>
+            )}
+            {tampered && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                <p className="text-xs text-red-700 font-bold">Tamper/Fault flagged</p>
+              </div>
+            )}
             {notes.trim() && (
               <div className="bg-blue-50 rounded-xl px-3 py-2">
                 <p className="text-xs text-blue-700 font-medium">Note: {notes.trim()}</p>
@@ -346,6 +361,40 @@ export default function ReadingEntry({
               </button>
             )}
           </div>
+
+          {/* Seal number */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Seal Number <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={sealNumber}
+              onChange={e => setSealNumber(e.target.value)}
+              placeholder="e.g. SL-2024-001"
+              className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:border-green-500"
+            />
+          </div>
+
+          {/* Tamper flag */}
+          <button
+            type="button"
+            onClick={() => setTampered(v => !v)}
+            className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 border-2 transition-colors ${
+              tampered
+                ? 'bg-red-50 border-red-400 text-red-700'
+                : 'bg-gray-50 border-gray-200 text-gray-500'
+            }`}
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="text-left">
+              <p className="text-sm font-semibold">{tampered ? 'Tamper/Fault Flagged' : 'Flag as Tampered / Faulty'}</p>
+              {tampered && <p className="text-xs mt-0.5">Supervisor will be notified for inspection</p>}
+            </div>
+          </button>
 
           {/* Notes — always available, collapsible */}
           {showNotes ? (

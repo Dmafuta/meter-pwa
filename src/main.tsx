@@ -2,6 +2,12 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
+import { syncPending } from './sync'
+
+// Auto-sync queued offline readings whenever connectivity is restored
+window.addEventListener('online', () => {
+  syncPending().catch(() => {})
+})
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },

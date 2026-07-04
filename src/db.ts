@@ -14,6 +14,8 @@ export interface PendingReading {
   notes?: string
   latitude?: number
   longitude?: number
+  sealNumber?: string
+  tampered?: boolean
   queuedAt: number
   failCount: number
   lastError?: string

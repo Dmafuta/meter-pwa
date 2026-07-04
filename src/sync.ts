@@ -7,7 +7,8 @@ export async function syncPending(): Promise<number> {
     try {
       await submitReading(
         item.meterId, item.currentValue, item.billingPeriod,
-        item.photoBase64, item.notes, item.latitude, item.longitude
+        item.photoBase64, item.notes, item.latitude, item.longitude,
+        item.sealNumber, item.tampered
       )
       await removePending(item.id!)
     } catch (err) {
