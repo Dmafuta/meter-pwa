@@ -10,10 +10,12 @@ function formatPeriod(p: string): string {
 export default function SupervisorDashboard({
   period,
   onChangePeriod,
+  onGoToList,
   onLogout,
 }: {
   period: string
   onChangePeriod: () => void
+  onGoToList: () => void
   onLogout: () => void
 }) {
   const [progress, setProgress]         = useState<ReadingProgress | null>(null)
@@ -48,6 +50,12 @@ export default function SupervisorDashboard({
         </div>
         <h1 className="text-2xl font-bold">Supervisor Overview</h1>
         <p className="text-indigo-300 text-sm mt-0.5">{formatPeriod(period)}</p>
+        <button
+          onClick={onGoToList}
+          className="mt-3 w-full bg-white/15 hover:bg-white/25 active:bg-white/30 text-white font-semibold text-sm rounded-xl py-2.5 transition-colors"
+        >
+          Read Meters →
+        </button>
       </div>
 
       <div className="flex-1 px-4 py-5 space-y-4">

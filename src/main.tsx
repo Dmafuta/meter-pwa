@@ -4,10 +4,22 @@ import App from './App'
 import './index.css'
 import { syncPending } from './sync'
 
-// Auto-sync queued offline readings whenever connectivity is restored
+// Sync when connectivity is restored
 window.addEventListener('online', () => {
   syncPending().catch(() => {})
 })
+
+// Sync when the tab becomes visible again (e.g. user switches back to the app)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && navigator.onLine) {
+    syncPending().catch(() => {})
+  }
+})
+
+// Periodic sync every 5 minutes while the app is open and online
+setInterval(() => {
+  if (navigator.onLine) syncPending().catch(() => {})
+}, 5 * 60 * 1000)
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getUnreadMeters, getReadMeters, type UnreadMeter, type ReadMeter } from '../api'
+import { getUnreadMeters, getReadMeters, getMyAssignments, type UnreadMeter, type ReadMeter } from '../api'
 import { countPending } from '../db'
 
 const UTILITY_BADGE: Record<string, string> = {
@@ -43,15 +43,16 @@ export default function MeterList({
   onRegister?: () => void
   onLogout: () => void
 }) {
-  const [meters, setMeters]         = useState<UnreadMeter[]>([])
-  const [readMeters, setReadMeters] = useState<ReadMeter[]>([])
-  const [showRead, setShowRead]     = useState(false)
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState('')
-  const [pending, setPending]       = useState(0)
-  const [query, setQuery]           = useState('')
-  const [elapsed, setElapsed]       = useState(0)
-  const completedAt                 = useRef<number | null>(null)
+  const [meters, setMeters]               = useState<UnreadMeter[]>([])
+  const [readMeters, setReadMeters]       = useState<ReadMeter[]>([])
+  const [hasAssignments, setHasAssignments] = useState(false)
+  const [showRead, setShowRead]           = useState(false)
+  const [loading, setLoading]             = useState(true)
+  const [error, setError]                 = useState('')
+  const [pending, setPending]             = useState(0)
+  const [query, setQuery]                 = useState('')
+  const [elapsed, setElapsed]             = useState(0)
+  const completedAt                       = useRef<number | null>(null)
 
   // Live elapsed timer
   useEffect(() => {
@@ -65,12 +66,24 @@ export default function MeterList({
     setLoading(true)
     setError('')
     try {
-      const [unread, read] = await Promise.all([
+      const [unread, read, assigned] = await Promise.all([
         getUnreadMeters(period),
         getReadMeters(period),
+        getMyAssignments(period).catch(() => []),
       ])
-      setMeters(unread)
       setReadMeters(read)
+      if (assigned.length > 0) {
+        // Reorder unread meters to match assignment sort order; show only assigned ones
+        const orderMap = new Map(assigned.map(a => [a.meter_number, a.sort_order]))
+        const assignedUnread = unread
+          .filter(m => orderMap.has(m.meter_number))
+          .sort((a, b) => (orderMap.get(a.meter_number) ?? 999) - (orderMap.get(b.meter_number) ?? 999))
+        setMeters(assignedUnread)
+        setHasAssignments(true)
+      } else {
+        setMeters(unread)
+        setHasAssignments(false)
+      }
       // Record when all meters were first completed
       if (unread.length === 0 && completedAt.current === null) {
         completedAt.current = Date.now()
@@ -207,7 +220,12 @@ export default function MeterList({
 
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Meter Readings</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">Meter Readings</h1>
+              {!loading && hasAssignments && (
+                <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-medium">Assigned</span>
+              )}
+            </div>
             {!loading && (
               <div className="flex items-center gap-3 mt-1">
                 <p className="text-green-200 text-sm">
@@ -224,9 +242,23 @@ export default function MeterList({
               </div>
             )}
           </div>
-          {!loading && elapsed > 0 && (
-            <p className="text-green-300 text-xs font-medium">{formatElapsed(elapsed)}</p>
-          )}
+          <div className="flex items-center gap-2">
+            {!loading && meters.length > 0 && (
+              <button
+                onClick={() => downloadManifest(meters, period)}
+                title="Download route manifest"
+                className="text-green-200 active:text-white"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+              </button>
+            )}
+            {!loading && elapsed > 0 && (
+              <p className="text-green-300 text-xs font-medium">{formatElapsed(elapsed)}</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -371,6 +403,27 @@ export default function MeterList({
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
+function downloadManifest(meters: UnreadMeter[], period: string) {
+  const rows = ['#,Unit,Meter Number,Utility,Last Reading,Last Reading Date']
+  meters.forEach((m, i) => {
+    rows.push([
+      i + 1,
+      `"${m.unit_label}"`,
+      m.meter_number,
+      m.utility_type,
+      m.last_reading ?? '',
+      m.last_reading_date ?? '',
+    ].join(','))
+  })
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `route-${period}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="flex justify-between items-center">

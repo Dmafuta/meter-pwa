@@ -138,6 +138,7 @@ export default function App() {
         <SupervisorDashboard
           period={period}
           onChangePeriod={() => setPage('period')}
+          onGoToList={() => setPage('list')}
           onLogout={logout}
         />
       )}
