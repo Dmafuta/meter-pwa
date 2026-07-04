@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getUnreadMeters, getReadMeters, type UnreadMeter, type ReadMeter } from '../api'
 import { countPending } from '../db'
 
@@ -15,29 +15,51 @@ function formatPeriod(p: string): string {
     .toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 export default function MeterList({
   period,
   refreshKey,
+  sessionStart,
   onMeterSelect,
   onChangePeriod,
   onShowQueue,
   onRegister,
-  onLogout
+  onLogout,
 }: {
   period: string
   refreshKey: number
-  onMeterSelect: (m: UnreadMeter) => void
+  sessionStart: number
+  onMeterSelect: (m: UnreadMeter, list: UnreadMeter[], index: number) => void
   onChangePeriod: () => void
   onShowQueue: () => void
   onRegister?: () => void
   onLogout: () => void
 }) {
-  const [meters, setMeters] = useState<UnreadMeter[]>([])
+  const [meters, setMeters]         = useState<UnreadMeter[]>([])
   const [readMeters, setReadMeters] = useState<ReadMeter[]>([])
-  const [showRead, setShowRead] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [pending, setPending] = useState(0)
+  const [showRead, setShowRead]     = useState(false)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState('')
+  const [pending, setPending]       = useState(0)
+  const [query, setQuery]           = useState('')
+  const [elapsed, setElapsed]       = useState(0)
+  const completedAt                 = useRef<number | null>(null)
+
+  // Live elapsed timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - sessionStart) / 1000))
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [sessionStart])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,19 +67,19 @@ export default function MeterList({
     try {
       const [unread, read] = await Promise.all([
         getUnreadMeters(period),
-        getReadMeters(period)
+        getReadMeters(period),
       ])
       setMeters(unread)
       setReadMeters(read)
+      // Record when all meters were first completed
+      if (unread.length === 0 && completedAt.current === null) {
+        completedAt.current = Date.now()
+      }
     } catch (e: unknown) {
       const status = (e as { status?: number }).status
-      if (status === 403) {
-        setError('Your account does not have permission to view meters. Contact your administrator.')
-      } else if (status === 401) {
-        setError('Session expired. Please sign in again.')
-      } else {
-        setError('Could not load meters. Check your connection and try again.')
-      }
+      if (status === 403)      setError('No permission to view meters. Contact your administrator.')
+      else if (status === 401) setError('Session expired. Please sign in again.')
+      else                     setError('Could not load meters. Check your connection and try again.')
     } finally {
       setLoading(false)
     }
@@ -66,10 +88,90 @@ export default function MeterList({
 
   useEffect(() => { void load() }, [load, refreshKey])
 
+  // Filtered unread meters
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? meters.filter(m =>
+        m.unit_label.toLowerCase().includes(q) ||
+        m.meter_number.toLowerCase().includes(q)
+      )
+    : meters
+
+  const total    = meters.length + readMeters.length
+  const progress = total > 0 ? Math.round((readMeters.length / total) * 100) : 0
+
+  // ── All-done screen ──────────────────────────────────────────────────────────
+  if (!loading && !error && meters.length === 0 && readMeters.length > 0) {
+    const duration = formatElapsed(Math.floor(
+      ((completedAt.current ?? Date.now()) - sessionStart) / 1000
+    ))
+    return (
+      <div className="flex flex-col min-h-screen bg-gray-50">
+        <div className="bg-green-600 text-white px-4 pt-12 pb-5 safe-top">
+          <div className="flex items-center justify-between">
+            <button onClick={onChangePeriod} className="text-green-200 text-sm active:text-white">
+              ← {formatPeriod(period)}
+            </button>
+            <button onClick={onLogout} className="text-green-200 text-sm active:text-white">Sign out</button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-5">
+            <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900">All done!</h2>
+          <p className="text-gray-500 mt-1 text-sm">All meters read for {formatPeriod(period)}</p>
+
+          <div className="mt-6 bg-white rounded-2xl shadow-sm w-full max-w-xs p-5 space-y-3">
+            <Stat label="Meters read" value={String(readMeters.length)} />
+            <Stat label="Time taken"  value={duration} />
+            {pending > 0 && <Stat label="Queued offline" value={String(pending)} highlight />}
+          </div>
+
+          <div className="mt-5 bg-white rounded-2xl shadow-sm w-full max-w-xs overflow-hidden">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">
+              Meters read this session
+            </p>
+            <div className="divide-y divide-gray-50 max-h-60 overflow-y-auto">
+              {readMeters.map(r => (
+                <div key={r.id} className="flex items-center px-4 py-2.5 gap-3">
+                  <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{r.unit_label ?? '—'}</p>
+                    <p className="text-xs text-gray-400 truncate">#{r.meter_number} · {r.current_value}</p>
+                  </div>
+                  {r.notes?.includes('inaccessible') && (
+                    <span className="text-xs text-orange-500 shrink-0">Inaccessible</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {pending > 0 && (
+            <button
+              onClick={onShowQueue}
+              className="mt-4 w-full max-w-xs bg-orange-500 text-white rounded-2xl py-3.5 font-semibold text-sm active:bg-orange-600"
+            >
+              Sync {pending} queued reading{pending !== 1 ? 's' : ''}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Normal list ──────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
+
       {/* Header */}
-      <div className="bg-green-600 text-white px-4 pt-12 pb-5 safe-top">
+      <div className="bg-green-600 text-white px-4 pt-12 pb-4 safe-top">
         <div className="flex items-center justify-between mb-2">
           <button
             onClick={onChangePeriod}
@@ -99,28 +201,60 @@ export default function MeterList({
                 </span>
               )}
             </button>
-            <button onClick={onLogout} className="text-green-200 text-sm active:text-white">
-              Sign out
-            </button>
+            <button onClick={onLogout} className="text-green-200 text-sm active:text-white">Sign out</button>
           </div>
         </div>
-        <h1 className="text-2xl font-bold">Meter Readings</h1>
-        {!loading && (
-          <div className="flex items-center gap-3 mt-1">
-            <p className="text-green-200 text-sm">
-              {meters.length} unread · {readMeters.length} read
-            </p>
-            {(meters.length + readMeters.length) > 0 && (
-              <div className="flex-1 bg-white/20 rounded-full h-1.5 max-w-[120px]">
-                <div
-                  className="bg-white rounded-full h-1.5 transition-all"
-                  style={{ width: `${Math.round(readMeters.length / (meters.length + readMeters.length) * 100)}%` }}
-                />
+
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Meter Readings</h1>
+            {!loading && (
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-green-200 text-sm">
+                  {meters.length} unread · {readMeters.length} read
+                </p>
+                {total > 0 && (
+                  <div className="flex-1 bg-white/20 rounded-full h-1.5 w-24">
+                    <div
+                      className="bg-white rounded-full h-1.5 transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
+          {!loading && elapsed > 0 && (
+            <p className="text-green-300 text-xs font-medium">{formatElapsed(elapsed)}</p>
+          )}
+        </div>
       </div>
+
+      {/* Search bar */}
+      {!loading && !error && meters.length > 0 && (
+        <div className="px-4 py-2 bg-white border-b border-gray-100">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
+            <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search unit or meter number…"
+              className="flex-1 bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none"
+            />
+            {query && (
+              <button onClick={() => setQuery('')} className="text-gray-400 active:text-gray-600">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex-1 px-4 py-4 overflow-y-auto">
@@ -141,37 +275,51 @@ export default function MeterList({
           </div>
         ) : (
           <div className="space-y-2">
-            {meters.map(m => (
-              <button
-                key={m.id}
-                onClick={() => onMeterSelect(m)}
-                className="w-full bg-white rounded-xl shadow-sm p-4 text-left active:bg-gray-50 flex items-center gap-3"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-gray-900 truncate">{m.unit_label}</span>
-                    <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${UTILITY_BADGE[m.utility_type] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {m.utility_type.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-500 truncate">
-                    #{m.meter_number} · Prev: {m.last_reading ?? '—'}
-                  </p>
-                </div>
-                <svg className="w-5 h-5 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            ))}
+            {/* Search result count */}
+            {q && (
+              <p className="text-xs text-gray-400 px-1">
+                {filtered.length} of {meters.length} meters match "{query}"
+              </p>
+            )}
 
-            {/* Already read section */}
+            {filtered.length === 0 && q ? (
+              <div className="text-center py-10 text-gray-400 text-sm">
+                No meters match "{query}"
+              </div>
+            ) : (
+              filtered.map((m, idx) => (
+                <button
+                  key={m.id}
+                  onClick={() => onMeterSelect(m, filtered, idx)}
+                  className="w-full bg-white rounded-xl shadow-sm p-4 text-left active:bg-gray-50 flex items-center gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold text-gray-900 truncate">{m.unit_label}</span>
+                      <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${UTILITY_BADGE[m.utility_type] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {m.utility_type.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-500 truncate">
+                      #{m.meter_number} · Prev: {m.last_reading ?? '—'}
+                    </p>
+                  </div>
+                  <svg className="w-5 h-5 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              ))
+            )}
+
+            {/* Already-read section */}
             {readMeters.length > 0 && (
               <div className="pt-2">
                 <button
                   onClick={() => setShowRead(v => !v)}
                   className="flex items-center gap-2 text-sm font-medium text-gray-400 py-2 w-full"
                 >
-                  <svg className={`w-4 h-4 transition-transform ${showRead ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={`w-4 h-4 transition-transform ${showRead ? 'rotate-90' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                   {readMeters.length} already read this period
@@ -218,6 +366,16 @@ export default function MeterList({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Small helpers ─────────────────────────────────────────────────────────────
+function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-sm text-gray-500">{label}</span>
+      <span className={`text-sm font-bold ${highlight ? 'text-orange-500' : 'text-gray-900'}`}>{value}</span>
     </div>
   )
 }

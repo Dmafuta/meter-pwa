@@ -18,22 +18,28 @@ function getStoredRole(): string {
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>(() =>
+  const [page, setPage]               = useState<Page>(() =>
     localStorage.getItem('meter_token') ? 'period' : 'login'
   )
-  const [userRole, setUserRole] = useState(getStoredRole)
-  const [period, setPeriod] = useState('')
+  const [userRole, setUserRole]       = useState(getStoredRole)
+  const [period, setPeriod]           = useState('')
   const [activePeriod, setActivePeriod] = useState<string | null>(null)
-  const [selectedMeter, setSelectedMeter] = useState<UnreadMeter | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshKey, setRefreshKey]   = useState(0)
+  const [sessionStart, setSessionStart] = useState(0)
 
-  // Fetch active period whenever we reach the period selection screen
+  // Auto-advance state
+  const [selectedMeter, setSelectedMeter] = useState<UnreadMeter | null>(null)
+  const [meterQueue, setMeterQueue]       = useState<UnreadMeter[]>([])
+  const [meterIndex, setMeterIndex]       = useState(0)
+
+  // Fetch active period when reaching period selection
   useEffect(() => {
     if (page === 'period' && localStorage.getItem('meter_token')) {
       getActivePeriod().then(setActivePeriod).catch(() => {})
     }
   }, [page])
 
+  // Auth expiry handler
   useEffect(() => {
     const handler = () => { setActivePeriod(null); setPage('login') }
     window.addEventListener('meter:auth-expired', handler)
@@ -47,42 +53,80 @@ export default function App() {
     setPage('login')
   }
 
+  function handlePeriodSelect(p: string) {
+    setPeriod(p)
+    setSessionStart(Date.now())
+    setPage('list')
+  }
+
+  function handleMeterSelect(m: UnreadMeter, list: UnreadMeter[], index: number) {
+    setSelectedMeter(m)
+    setMeterQueue(list)
+    setMeterIndex(index)
+    setPage('entry')
+  }
+
+  function handleReadingSubmitted() {
+    const nextIndex = meterIndex + 1
+    if (nextIndex < meterQueue.length) {
+      // Auto-advance to next meter — key prop on ReadingEntry forces full re-mount
+      setSelectedMeter(meterQueue[nextIndex])
+      setMeterIndex(nextIndex)
+      // Stay on 'entry' page
+    } else {
+      // Reached end of queue — back to list with refresh
+      setRefreshKey(k => k + 1)
+      setPage('list')
+    }
+  }
+
+  const nextMeter = meterQueue[meterIndex + 1] ?? null
+
   return (
     <div className="min-h-screen bg-gray-50">
       <OfflineBanner />
       <InstallPrompt />
+
       {page === 'login' && (
         <Login onLogin={() => { setUserRole(getStoredRole()); setPage('period') }} />
       )}
+
       {page === 'period' && (
         <PeriodSelect
-          onSelect={p => { setPeriod(p); setPage('list') }}
+          onSelect={handlePeriodSelect}
           onLogout={logout}
           activePeriod={activePeriod}
         />
       )}
+
       {page === 'list' && (
         <MeterList
           period={period}
           refreshKey={refreshKey}
-          onMeterSelect={m => { setSelectedMeter(m); setPage('entry') }}
+          sessionStart={sessionStart}
+          onMeterSelect={handleMeterSelect}
           onChangePeriod={() => setPage('period')}
           onShowQueue={() => setPage('queue')}
           onRegister={userRole === 'field_technician' ? () => setPage('register') : undefined}
           onLogout={logout}
         />
       )}
+
       {page === 'entry' && selectedMeter && (
         <ReadingEntry
+          key={selectedMeter.id}
           meter={selectedMeter}
           period={period}
-          onSubmitted={() => { setRefreshKey(k => k + 1); setPage('list') }}
+          nextMeter={nextMeter}
+          onSubmitted={handleReadingSubmitted}
           onBack={() => setPage('list')}
         />
       )}
+
       {page === 'queue' && (
         <PendingQueue onBack={() => setPage('list')} />
       )}
+
       {page === 'register' && (
         <RegisterMeter onBack={() => setPage('list')} />
       )}

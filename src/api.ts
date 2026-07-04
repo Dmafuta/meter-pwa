@@ -134,6 +134,23 @@ export function listUnits(noMeterForUtility?: string): Promise<UnitSummary[]> {
   return apiFetch(`/units${qs}`)
 }
 
+// ── Reading history ────────────────────────────────────────────────────────────
+
+export interface MeterReadingHistory {
+  id: string
+  billing_period: string | null
+  reading_date: string | null
+  previous_value: number
+  current_value: number
+  units_consumed: number
+  source: string | null
+  status: string
+}
+
+export async function getReadingHistory(meterId: string): Promise<MeterReadingHistory[]> {
+  return apiFetch(`/meters/${meterId}/readings`)
+}
+
 // ── Meter registration ─────────────────────────────────────────────────────────
 
 export interface RegisterMeterPayload {
