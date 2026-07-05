@@ -19,6 +19,7 @@ export async function syncPending(): Promise<number> {
         item.sealNumber, item.tampered
       )
       await removePending(item.id!)
+      localStorage.setItem('meter_last_synced', new Date().toISOString())
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
       // 4xx = permanent business error — increment fail count

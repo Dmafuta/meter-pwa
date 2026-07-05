@@ -247,7 +247,10 @@ export default function ReadingEntry({
                   isAnomaly ? 'bg-orange-500 active:bg-orange-600' : 'bg-green-600 active:bg-green-700'
                 }`}
               >
-                {loading ? 'Submitting…' : isAnomaly ? 'Submit Anyway' : 'Confirm'}
+                {loading
+                ? (photo ? 'Uploading…' : 'Submitting…')
+                : isAnomaly ? 'Submit Anyway' : 'Confirm'
+              }
               </button>
             </div>
           </div>

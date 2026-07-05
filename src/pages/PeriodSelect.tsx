@@ -28,6 +28,7 @@ export default function PeriodSelect({
   onLogout: () => void
   activePeriod: string | null
 }) {
+  const SUPERVISOR_ROLES = ['supervisor', 'meter_supervisor', 'facility_manager', 'admin']
   const user: { fullName?: string; role?: string } = JSON.parse(localStorage.getItem('meter_user') ?? '{}')
   const isFieldTech = user.role === 'field_technician'
   // Field technicians keep free navigation; other roles are locked to the active period if set
@@ -81,7 +82,7 @@ export default function PeriodSelect({
             onClick={() => onSelect(period)}
             className="w-full bg-green-600 text-white rounded-xl py-3.5 font-semibold text-base active:bg-green-700 transition-colors"
           >
-            Start Reading
+            {SUPERVISOR_ROLES.includes(user.role ?? '') ? 'Open Dashboard' : 'Start Reading'}
           </button>
         </div>
       </div>

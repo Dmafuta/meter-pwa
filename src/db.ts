@@ -75,3 +75,12 @@ export async function countPending(): Promise<number> {
   if (!store) return 0
   return store.count(STORE)
 }
+
+export async function resetFailed(id: number): Promise<void> {
+  const store = await db
+  if (!store) return
+  const item = await store.get(STORE, id) as PendingReading
+  if (item) {
+    await store.put(STORE, { ...item, failCount: 0, lastError: undefined })
+  }
+}

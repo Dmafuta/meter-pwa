@@ -22,6 +22,8 @@ export default function SupervisorDashboard({
   const [performance, setPerformance]   = useState<ReaderPerformance[]>([])
   const [loading, setLoading]           = useState(true)
   const [error, setError]               = useState('')
+  const [refreshKey, setRefreshKey]     = useState(0)
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -32,10 +34,11 @@ export default function SupervisorDashboard({
     ]).then(([prog, perf]) => {
       setProgress(prog)
       setPerformance(perf)
+      setLastRefreshed(new Date())
     }).catch(() => {
       setError('Failed to load supervisor data.')
     }).finally(() => setLoading(false))
-  }, [period])
+  }, [period, refreshKey])
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -46,7 +49,25 @@ export default function SupervisorDashboard({
           <button onClick={onChangePeriod} className="text-indigo-200 text-sm active:text-white">
             ← {formatPeriod(period)}
           </button>
+          <div className="flex items-center gap-3">
+          {lastRefreshed && !loading && (
+            <span className="text-indigo-300 text-xs">
+              {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+          <button
+            onClick={() => setRefreshKey(k => k + 1)}
+            disabled={loading}
+            className="text-indigo-200 active:text-white disabled:opacity-40"
+            title="Refresh"
+          >
+            <svg className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
           <button onClick={onLogout} className="text-indigo-200 text-sm active:text-white">Sign out</button>
+        </div>
         </div>
         <h1 className="text-2xl font-bold">Supervisor Overview</h1>
         <p className="text-indigo-300 text-sm mt-0.5">{formatPeriod(period)}</p>

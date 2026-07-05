@@ -10,6 +10,7 @@ import OfflineBanner from './components/OfflineBanner'
 import InstallPrompt from './components/InstallPrompt'
 import { getActivePeriod } from './api'
 import type { UnreadMeter } from './api'
+import { countPending } from './db'
 
 type Page = 'login' | 'period' | 'list' | 'entry' | 'queue' | 'register' | 'supervisor'
 
@@ -49,7 +50,14 @@ export default function App() {
     return () => window.removeEventListener('meter:auth-expired', handler)
   }, [])
 
-  function logout() {
+  async function logout() {
+    const pending = await countPending()
+    if (pending > 0) {
+      const ok = window.confirm(
+        `You have ${pending} reading${pending !== 1 ? 's' : ''} queued offline that haven't synced yet. Sign out anyway?`
+      )
+      if (!ok) return
+    }
     localStorage.removeItem('meter_token')
     localStorage.removeItem('meter_user')
     setUserRole('')
@@ -111,6 +119,7 @@ export default function App() {
           onChangePeriod={() => setPage('period')}
           onShowQueue={() => setPage('queue')}
           onRegister={userRole === 'field_technician' ? () => setPage('register') : undefined}
+          onGoToDashboard={SUPERVISOR_ROLES.includes(userRole) ? () => setPage('supervisor') : undefined}
           onLogout={logout}
         />
       )}

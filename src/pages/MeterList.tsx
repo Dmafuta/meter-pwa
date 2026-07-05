@@ -32,6 +32,7 @@ export default function MeterList({
   onChangePeriod,
   onShowQueue,
   onRegister,
+  onGoToDashboard,
   onLogout,
 }: {
   period: string
@@ -41,6 +42,7 @@ export default function MeterList({
   onChangePeriod: () => void
   onShowQueue: () => void
   onRegister?: () => void
+  onGoToDashboard?: () => void
   onLogout: () => void
 }) {
   const [meters, setMeters]               = useState<UnreadMeter[]>([])
@@ -172,6 +174,15 @@ export default function MeterList({
               className="mt-4 w-full max-w-xs bg-orange-500 text-white rounded-2xl py-3.5 font-semibold text-sm active:bg-orange-600"
             >
               Sync {pending} queued reading{pending !== 1 ? 's' : ''}
+            </button>
+          )}
+
+          {onGoToDashboard && (
+            <button
+              onClick={onGoToDashboard}
+              className="mt-3 w-full max-w-xs bg-indigo-600 text-white rounded-2xl py-3.5 font-semibold text-sm active:bg-indigo-700"
+            >
+              View Supervisor Dashboard
             </button>
           )}
         </div>

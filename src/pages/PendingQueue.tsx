@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { listPending, removePending, type PendingReading } from '../db'
+import { listPending, removePending, resetFailed, type PendingReading } from '../db'
 import { syncPending, MAX_RETRIES } from '../sync'
 
 function formatDate(ts: number) {
@@ -9,6 +9,7 @@ function formatDate(ts: number) {
 export default function PendingQueue({ onBack }: { onBack: () => void }) {
   const [items, setItems] = useState<PendingReading[]>([])
   const [syncing, setSyncing] = useState(false)
+  const lastSynced = localStorage.getItem('meter_last_synced')
 
   const load = useCallback(async () => {
     setItems(await listPending())
@@ -19,6 +20,17 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
   async function discard(id: number) {
     await removePending(id)
     await load()
+  }
+
+  async function retry(id: number) {
+    await resetFailed(id)
+    await load()
+    if (navigator.onLine) {
+      setSyncing(true)
+      await syncPending()
+      await load()
+      setSyncing(false)
+    }
   }
 
   async function handleSync() {
@@ -45,6 +57,11 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
             <p className="text-green-200 text-sm mt-0.5">
               {items.length === 0 ? 'All synced' : `${items.length} waiting to sync`}
             </p>
+            {lastSynced && (
+              <p className="text-green-300 text-xs mt-0.5">
+                Last synced {new Date(lastSynced).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
           </div>
           {items.length > 0 && (
             <button
@@ -83,7 +100,7 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
                           </p>
                         ) : (
                           <p className="text-xs text-orange-500">
-                            Failed {item.failCount}× — retrying… {item.lastError}
+                            Failed {item.failCount}× — {item.lastError}
                           </p>
                         )}
                       </div>
@@ -92,6 +109,14 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     {item.photoBase64 && (
                       <img src={item.photoBase64} alt="meter" className="w-14 h-14 rounded-lg object-cover" />
+                    )}
+                    {(item.failCount ?? 0) >= MAX_RETRIES && (
+                      <button
+                        onClick={() => void retry(item.id!)}
+                        className="text-xs text-indigo-600 font-semibold py-1 px-2 active:text-indigo-800"
+                      >
+                        Retry
+                      </button>
                     )}
                     <button
                       onClick={() => discard(item.id!)}
