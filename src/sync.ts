@@ -4,7 +4,7 @@ import { submitReading } from './api'
 // Readings that fail with a permanent server error (4xx) after MAX_RETRIES
 // attempts are abandoned — they stay in the queue visible in PendingQueue but
 // won't block other readings from syncing.
-const MAX_RETRIES = 5
+export const MAX_RETRIES = 5
 
 export async function syncPending(): Promise<number> {
   const items = await listPending()
