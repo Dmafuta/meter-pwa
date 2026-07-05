@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { listPending, removePending, type PendingReading } from '../db'
-import { syncPending } from '../sync'
+import { syncPending, MAX_RETRIES } from '../sync'
 
 function formatDate(ts: number) {
   return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -76,9 +76,17 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
                     <p className="text-sm text-gray-700 mt-1">Reading: <span className="font-semibold">{item.currentValue}</span></p>
                     <p className="text-xs text-gray-400 mt-0.5">Queued {formatDate(item.queuedAt)}</p>
                     {item.failCount > 0 && (
-                      <p className="text-xs text-red-500 mt-1">
-                        Failed {item.failCount}× — {item.lastError}
-                      </p>
+                      <div className="mt-1">
+                        {item.failCount >= MAX_RETRIES ? (
+                          <p className="text-xs font-semibold text-red-600">
+                            Stuck — tell the manager: {item.lastError}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-orange-500">
+                            Failed {item.failCount}× — retrying… {item.lastError}
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
