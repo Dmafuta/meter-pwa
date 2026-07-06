@@ -212,7 +212,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
 
               <div className="mt-5 flex items-center gap-2 text-[11.5px] text-ink-muted">
                 <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
-                Encrypted sign-in. Only authorized crew members can log in.
+                Encrypted sign-in. Access restricted to authorized crew only.
               </div>
             </section>
           </div>

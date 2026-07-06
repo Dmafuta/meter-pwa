@@ -52,6 +52,15 @@
   }
 }
 
+/* Suppress browser autofill blue overlay */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+}
+
 @utility bg-grid {
   background-image:
     linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
