@@ -14,7 +14,9 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
     try {
       const { token, user } = await loginForToken(email.trim(), password)
       localStorage.setItem('meter_token', token)
-      localStorage.setItem('meter_user', JSON.stringify(user))
+      // Normalize role to lowercase_underscore so all role checks work consistently
+      const normalizedUser = { ...user, role: user.role.toLowerCase().replace(/\s+/g, '_') }
+      localStorage.setItem('meter_user', JSON.stringify(normalizedUser))
       onLogin()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
