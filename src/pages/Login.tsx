@@ -35,11 +35,11 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
   }
 
   return (
-    <main className="relative flex min-h-dvh w-full flex-col lg:flex-row">
+    <main className="relative flex h-dvh w-full flex-col overflow-hidden lg:flex-row">
 
       {/* ── Left panel — brand / hero (desktop only) ────────────────────────── */}
       <div
-        className="relative hidden w-full overflow-hidden lg:flex lg:w-1/2 lg:min-h-dvh lg:flex-col lg:justify-between lg:px-12 lg:py-10 xl:px-16"
+        className="relative hidden w-full overflow-hidden lg:flex lg:w-1/2 lg:h-full lg:flex-col lg:justify-between lg:px-12 lg:py-10 xl:px-16"
         style={{ background: 'var(--gradient-brand)' }}
       >
         <div className="pointer-events-none absolute inset-0 bg-grid opacity-20" aria-hidden />
@@ -89,7 +89,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
 
       {/* ── Right panel — form ───────────────────────────────────────────────── */}
       <div
-        className="relative flex min-h-dvh w-full flex-col overflow-hidden lg:w-1/2"
+        className="relative flex h-full w-full flex-col overflow-hidden lg:w-1/2"
         style={{ background: 'var(--gradient-surface), var(--color-surface)' }}
       >
         <div className="pointer-events-none absolute inset-0 bg-grid opacity-70" aria-hidden />
@@ -99,7 +99,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
           aria-hidden
         />
 
-        <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6 sm:px-8 sm:py-10 md:max-w-lg lg:max-w-sm lg:px-8 lg:py-10 xl:max-w-md xl:px-12">
+        <div className="relative mx-auto flex h-full w-full max-w-md flex-col px-5 py-6 sm:px-8 sm:py-10 md:max-w-lg lg:max-w-sm lg:px-8 lg:py-10 xl:max-w-md xl:px-12">
 
           {/* Mobile / tablet brand header */}
           <header className="flex items-center justify-between lg:hidden">
