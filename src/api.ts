@@ -4,23 +4,79 @@ function token() {
   return localStorage.getItem('meter_token') ?? ''
 }
 
+// ── Silent token refresh with queue (prevents concurrent refresh races) ───────
+
+let refreshPromise: Promise<boolean> | null = null
+
+async function doRefresh(): Promise<boolean> {
+  const refreshToken = localStorage.getItem('meter_refresh_token')
+  if (!refreshToken) return false
+  try {
+    const res = await fetch(BASE + '/auth/refresh-pwa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    })
+    if (!res.ok) return false
+    const json = await res.json()
+    const { token: newToken, refreshToken: newRefresh } = json.data as { token: string; refreshToken: string }
+    localStorage.setItem('meter_token', newToken)
+    localStorage.setItem('meter_refresh_token', newRefresh)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** If a refresh is already in flight, all callers await the same promise. */
+function attemptRefresh(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = doRefresh().finally(() => { refreshPromise = null })
+  }
+  return refreshPromise
+}
+
+function handleAuthExpired() {
+  localStorage.removeItem('meter_token')
+  localStorage.removeItem('meter_refresh_token')
+  localStorage.removeItem('meter_user')
+  window.dispatchEvent(new Event('meter:auth-expired'))
+}
+
+// ── Fetch wrapper ─────────────────────────────────────────────────────────────
+
 async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(BASE + path, {
-    ...opts,
-    headers: {
+  function buildHeaders() {
+    return {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token()}`,
-      ...(opts.headers as Record<string, string>)
+      ...(opts.headers as Record<string, string>),
     }
-  })
-  if (res.status === 401) {
-    localStorage.removeItem('meter_token')
-    localStorage.removeItem('meter_user')
-    window.dispatchEvent(new Event('meter:auth-expired'))
-    const err = new Error('Session expired') as Error & { status: number }
-    err.status = 401
-    throw err
   }
+
+  let res = await fetch(BASE + path, { ...opts, headers: buildHeaders() })
+
+  // ── 401 → attempt silent refresh, then retry once ─────────────────────────
+  if (res.status === 401) {
+    const refreshed = await attemptRefresh()
+    if (refreshed) {
+      res = await fetch(BASE + path, { ...opts, headers: buildHeaders() })
+      // Still 401 after a successful refresh → account suspended / revoked
+      if (res.status === 401) {
+        handleAuthExpired()
+        const err = new Error('Session expired') as Error & { status: number }
+        err.status = 401
+        throw err
+      }
+    } else {
+      // Refresh token expired or missing → send to login
+      handleAuthExpired()
+      const err = new Error('Session expired') as Error & { status: number }
+      err.status = 401
+      throw err
+    }
+  }
+
   const json = await res.json()
   if (!res.ok) {
     const err = new Error(json.message ?? 'Request failed') as Error & { status: number }
@@ -42,7 +98,7 @@ export interface AuthUser {
 export async function loginForToken(
   email: string,
   password: string
-): Promise<{ token: string; user: AuthUser }> {
+): Promise<{ token: string; refreshToken?: string; user: AuthUser }> {
   const res = await fetch(BASE + '/auth/login-token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

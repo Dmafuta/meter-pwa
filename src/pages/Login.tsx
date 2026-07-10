@@ -22,8 +22,9 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
     setLoading(true)
     setError('')
     try {
-      const { token, user } = await loginForToken(email.trim(), password)
+      const { token, refreshToken, user } = await loginForToken(email.trim(), password)
       localStorage.setItem('meter_token', token)
+      if (refreshToken) localStorage.setItem('meter_refresh_token', refreshToken)
       const normalizedUser = { ...user, role: user.role.toLowerCase().replace(/\s+/g, '_') }
       localStorage.setItem('meter_user', JSON.stringify(normalizedUser))
       onLogin()
