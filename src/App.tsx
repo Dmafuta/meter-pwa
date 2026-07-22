@@ -8,6 +8,8 @@ import RegisterMeter from './pages/RegisterMeter'
 import SupervisorDashboard from './pages/SupervisorDashboard'
 import OfflineBanner from './components/OfflineBanner'
 import InstallPrompt from './components/InstallPrompt'
+import UpdateBanner from './components/UpdateBanner'
+import InactivityLock from './components/InactivityLock'
 import { getActivePeriod } from './api'
 import type { UnreadMeter } from './api'
 import { countPending } from './db'
@@ -136,8 +138,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <UpdateBanner />
       <OfflineBanner />
       <InstallPrompt />
+      <InactivityLock active={page !== 'login'} />
 
       {page === 'login' && (
         <Login onLogin={() => { setUserRole(getStoredRole()); setPage('period') }} />

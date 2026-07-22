@@ -102,6 +102,33 @@ export default function ReadingEntry({
   const touchStartXRef  = useRef(0)
   const pinchRef        = useRef({ startDist: 0, startScale: 1 })
 
+  // ── Screen Wake Lock — keep display on while reading ──────────────────────
+  useEffect(() => {
+    type WakeLockSentinel = { released: boolean; release(): Promise<void> }
+    type WakeLockApi = { request(type: 'screen'): Promise<WakeLockSentinel> }
+    const nav = navigator as Navigator & { wakeLock?: WakeLockApi }
+    if (!nav.wakeLock) return
+
+    let sentinel: WakeLockSentinel | null = null
+
+    async function acquire() {
+      try { sentinel = await nav.wakeLock!.request('screen') }
+      catch { /* permission denied or not supported */ }
+    }
+
+    // Re-acquire when tab becomes visible again
+    function handleVisibility() {
+      if (!document.hidden && (!sentinel || sentinel.released)) void acquire()
+    }
+
+    void acquire()
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      sentinel?.release().catch(() => {})
+    }
+  }, [])
+
   // Call-once wrapper so swipe and the scheduled timeout don't both fire
   function doAdvance() {
     if (advancedRef.current) return
