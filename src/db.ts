@@ -1,8 +1,10 @@
 import { openDB } from 'idb'
 
-const DB_NAME    = 'meter-pwa'
-const STORE      = 'pending'
-const CACHE_STORE = 'meter-cache'
+const DB_NAME       = 'meter-pwa'
+const STORE         = 'pending'
+const CACHE_STORE   = 'meter-cache'
+const CONFLICTS_STORE = 'conflicts'
+const HISTORY_STORE   = 'history-cache'
 
 export interface PendingReading {
   id?: number
@@ -22,9 +24,20 @@ export interface PendingReading {
   lastError?: string
 }
 
+export interface ConflictReading {
+  id?: number
+  meterId: string
+  meterNumber: string
+  unitLabel: string
+  currentValue: number
+  billingPeriod: string
+  conflictedAt: number
+  reason: string
+}
+
 function openDb() {
   try {
-    return openDB(DB_NAME, 4, {
+    return openDB(DB_NAME, 5, {
       upgrade(d, oldVersion) {
         if (oldVersion < 1) {
           d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true })
@@ -34,6 +47,12 @@ function openDb() {
         if (oldVersion < 4) {
           if (!d.objectStoreNames.contains(CACHE_STORE))
             d.createObjectStore(CACHE_STORE) // keyed by period string
+        }
+        if (oldVersion < 5) {
+          if (!d.objectStoreNames.contains(CONFLICTS_STORE))
+            d.createObjectStore(CONFLICTS_STORE, { keyPath: 'id', autoIncrement: true })
+          if (!d.objectStoreNames.contains(HISTORY_STORE))
+            d.createObjectStore(HISTORY_STORE) // keyed by meterId string
         }
       }
     }).catch(err => {
@@ -93,6 +112,43 @@ export async function resetFailed(id: number): Promise<void> {
   if (item) {
     await store.put(STORE, { ...item, failCount: 0, lastError: undefined })
   }
+}
+
+// ── Conflict readings (409 from server — already read by another user) ─────────
+
+export async function saveConflict(r: Omit<ConflictReading, 'id'>): Promise<void> {
+  const store = await db
+  if (!store) return
+  await store.add(CONFLICTS_STORE, r)
+}
+
+export async function listConflicts(): Promise<ConflictReading[]> {
+  const store = await db
+  if (!store) return []
+  return store.getAll(CONFLICTS_STORE)
+}
+
+export async function removeConflict(id: number): Promise<void> {
+  const store = await db
+  if (!store) return
+  return store.delete(CONFLICTS_STORE, id)
+}
+
+// ── Reading history cache (persist per-meter history to IndexedDB) ─────────────
+
+export async function saveHistoryCache(meterId: string, history: unknown[]): Promise<void> {
+  const store = await db
+  if (!store) return
+  await store.put(HISTORY_STORE, { history, timestamp: Date.now() }, meterId)
+}
+
+export async function loadHistoryCache(meterId: string): Promise<unknown[] | null> {
+  const store = await db
+  if (!store) return null
+  const cached = await store.get(HISTORY_STORE, meterId) as { history: unknown[]; timestamp: number } | undefined
+  // Expire cache entries older than 24h
+  if (!cached || Date.now() - cached.timestamp > 24 * 3600 * 1000) return null
+  return cached.history
 }
 
 // ── Meter list cache (offline support) ────────────────────────────────────────

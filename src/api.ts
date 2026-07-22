@@ -228,6 +228,8 @@ export async function getReadingHistory(meterId: string): Promise<MeterReadingHi
   if (_historyCache.has(meterId)) return _historyCache.get(meterId)!
   const data = await apiFetch<MeterReadingHistory[]>(`/meters/${meterId}/readings`)
   _historyCache.set(meterId, data)
+  // Persist to IndexedDB for offline access (best effort — import dynamically to avoid circular deps)
+  import('./db').then(({ saveHistoryCache }) => saveHistoryCache(meterId, data)).catch(() => {})
   return data
 }
 
@@ -375,6 +377,23 @@ export async function sendHeartbeat(): Promise<void> {
   } catch { /* not supported */ }
 
   await apiFetch('/devices/heartbeat', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+// ── Device online list (supervisor) ──────────────────────────────────────────
+
+export interface OnlineDevice {
+  device_id: string
+  device_name: string | null
+  user_id: string | null
+  user_name: string | null
+  battery_level: number | null
+  latitude: number | null
+  longitude: number | null
+  online_at: string
+}
+
+export function getOnlineDevices(): Promise<OnlineDevice[]> {
+  return apiFetch('/devices/online')
 }
 
 // ── AMR ingest (for admin/tooling; devices use the API-key endpoint directly) ──

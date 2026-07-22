@@ -1,4 +1,4 @@
-import { listPending, removePending, markFailed } from './db'
+import { listPending, removePending, markFailed, saveConflict } from './db'
 import { submitReading } from './api'
 
 // Readings that fail with a permanent server error (4xx) after MAX_RETRIES
@@ -27,13 +27,16 @@ export async function syncPending(): Promise<number> {
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
       if (status === 409) {
-        // Already read by another user — discard without retrying
+        // Conflict — reading already submitted by another user; save for review
+        await saveConflict({
+          meterId: item.meterId, meterNumber: item.meterNumber, unitLabel: item.unitLabel,
+          currentValue: item.currentValue, billingPeriod: item.billingPeriod,
+          conflictedAt: Date.now(), reason: 'Already read by another user',
+        })
         await removePending(item.id!)
         continue
       }
-      const msg = status === 409
-        ? 'Already read by another user'
-        : (err instanceof Error ? err.message : 'Unknown error')
+      const msg = err instanceof Error ? err.message : 'Unknown error'
       await markFailed(item.id!, msg)
       if (status && status >= 400 && status < 500) {
         const updated = (item.failCount ?? 0) + 1
@@ -60,6 +63,11 @@ export async function syncPendingWithProgress(
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
       if (status === 409) {
+        await saveConflict({
+          meterId: item.meterId, meterNumber: item.meterNumber, unitLabel: item.unitLabel,
+          currentValue: item.currentValue, billingPeriod: item.billingPeriod,
+          conflictedAt: Date.now(), reason: 'Already read by another user',
+        })
         await removePending(item.id!)
       } else {
         await markFailed(item.id!, err instanceof Error ? err.message : 'Unknown error')

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { listPending, removePending, resetFailed, resetAllFailed, type PendingReading } from '../db'
+import { listPending, removePending, resetFailed, resetAllFailed, listConflicts, removeConflict, type PendingReading, type ConflictReading } from '../db'
 import { syncPendingWithProgress, MAX_RETRIES } from '../sync'
 
 function formatDate(ts: number) {
@@ -29,13 +29,15 @@ function exportQueueCsv(items: import('../db').PendingReading[]) {
 }
 
 export default function PendingQueue({ onBack }: { onBack: () => void }) {
-  const [items, setItems]       = useState<PendingReading[]>([])
-  const [syncing, setSyncing]   = useState(false)
+  const [items, setItems]         = useState<PendingReading[]>([])
+  const [conflicts, setConflicts] = useState<ConflictReading[]>([])
+  const [syncing, setSyncing]     = useState(false)
   const [syncingId, setSyncingId] = useState<number | null>(null)
   const lastSynced = localStorage.getItem('meter_last_synced')
 
   const load = useCallback(async () => {
     setItems(await listPending())
+    setConflicts(await listConflicts())
   }, [])
 
   useEffect(() => { void load() }, [load])
@@ -103,9 +105,9 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
           <div>
             <h1 className="text-2xl font-bold">Queued Readings</h1>
             <p className="text-green-200 text-sm mt-0.5">
-              {items.length === 0
+              {items.length === 0 && conflicts.length === 0
                 ? 'All synced'
-                : `${pending.length} pending · ${failed.length} failed`}
+                : `${pending.length} pending · ${failed.length} failed${conflicts.length > 0 ? ` · ${conflicts.length} conflict${conflicts.length !== 1 ? 's' : ''}` : ''}`}
             </p>
             {lastSynced && (
               <p className="text-green-300 text-xs mt-0.5">
@@ -145,13 +147,43 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
       </div>
 
       <div className="flex-1 px-4 py-4">
-        {items.length === 0 ? (
+        {/* ── Conflict readings (409 duplicate conflicts) ── */}
+        {conflicts.length > 0 && (
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Conflicts ({conflicts.length}) — already read by another user
+            </p>
+            <div className="space-y-2">
+              {conflicts.map(c => (
+                <div key={c.id} className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 text-sm truncate">{c.unitLabel}</p>
+                      <p className="text-xs text-gray-500">#{c.meterNumber} · {c.billingPeriod}</p>
+                      <p className="text-xs text-gray-700 mt-0.5">Reading: <span className="font-semibold">{c.currentValue}</span></p>
+                      <p className="text-xs text-orange-600 mt-0.5 font-medium">{c.reason}</p>
+                      <p className="text-xs text-gray-400">{formatDate(c.conflictedAt)}</p>
+                    </div>
+                    <button
+                      onClick={async () => { await removeConflict(c.id!); await load() }}
+                      className="text-xs text-gray-400 py-1 px-2 active:text-red-500 shrink-0"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {items.length === 0 && conflicts.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">✓</div>
             <p className="font-semibold text-gray-900">Nothing queued</p>
             <p className="text-sm text-gray-500 mt-1">All readings have been synced</p>
           </div>
-        ) : (
+        ) : items.length === 0 ? null : (
           <div className="space-y-2">
             {items.map(item => {
               const isSyncing = syncingId === item.id

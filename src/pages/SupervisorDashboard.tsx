@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   getReadingProgress, getReaderPerformance, getUnreadMeters, getAnomalyReadings, getTamperedReadings,
-  getAssignmentSummary, getAvailableReaders, assignByBlock, clearByBlock,
+  getAssignmentSummary, getAvailableReaders, assignByBlock, clearByBlock, getOnlineDevices,
   type ReadingProgress, type ReaderPerformance, type UnreadMeter, type ReadMeter,
-  type AssignmentPhase, type AvailableReader, type AssignmentBlock,
+  type AssignmentPhase, type AvailableReader, type AssignmentBlock, type OnlineDevice,
 } from '../api'
 
 function formatPeriod(p: string): string {
@@ -29,7 +29,7 @@ export default function SupervisorDashboard({
   onGoToList: () => void
   onLogout: () => void
 }) {
-  type DashTab = 'overview' | 'unread' | 'smart' | 'anomalies' | 'tampered' | 'assign'
+  type DashTab = 'overview' | 'unread' | 'smart' | 'anomalies' | 'tampered' | 'assign' | 'devices'
 
   const [tab, setTab]                   = useState<DashTab>('overview')
   const [progress, setProgress]         = useState<ReadingProgress | null>(null)
@@ -48,6 +48,7 @@ export default function SupervisorDashboard({
   const [unreadSearch, setUnreadSearch]   = useState('')
   const [tamperedSearch, setTamperedSearch] = useState('')
   const [blockSummary, setBlockSummary]   = useState<AssignmentBlock[]>([])
+  const [onlineDevices, setOnlineDevices] = useState<OnlineDevice[]>([])
 
   useEffect(() => {
     setLoading(true)
@@ -60,7 +61,8 @@ export default function SupervisorDashboard({
       getTamperedReadings(period),
       getReadingProgress(prevPeriod(period)),
       getAssignmentSummary(period),
-    ]).then(([progR, perfR, unreadR, anomaliesR, tamperedR, prevR, assignR]) => {
+      getOnlineDevices(),
+    ]).then(([progR, perfR, unreadR, anomaliesR, tamperedR, prevR, assignR, devicesR]) => {
       if (progR.status === 'rejected') {
         const msg = (progR.reason as Error)?.message ?? 'Unknown error'
         setError(`Failed to load data: ${msg}`)
@@ -83,6 +85,7 @@ export default function SupervisorDashboard({
       if (assignR.status === 'fulfilled') {
         setBlockSummary(assignR.value.flatMap(p => p.blocks))
       }
+      if (devicesR.status === 'fulfilled') setOnlineDevices(devicesR.value)
       setLastRefreshed(new Date())
     }).finally(() => setLoading(false))
   }, [period, refreshKey])
@@ -161,6 +164,7 @@ export default function SupervisorDashboard({
           { key: 'anomalies', label: `Anom.${!loading && anomalyReadings.length > 0 ? ` (${anomalyReadings.length})` : ''}` },
           { key: 'tampered',  label: `Tampered${!loading && tamperedReadings.length > 0 ? ` (${tamperedReadings.length})` : ''}` },
           { key: 'assign',    label: 'Assign' },
+          { key: 'devices',   label: `Devices${!loading && onlineDevices.length > 0 ? ` (${onlineDevices.length})` : ''}` },
         ] as { key: DashTab; label: string }[]).map(t => (
           <button
             key={t.key}
@@ -482,6 +486,57 @@ export default function SupervisorDashboard({
 
             {/* ── ASSIGN TAB ───────────────────────────────────────────────── */}
             {tab === 'assign' && <AssignTab period={period} />}
+
+            {/* ── DEVICES TAB ──────────────────────────────────────────────── */}
+            {tab === 'devices' && (
+              onlineDevices.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="text-5xl mb-3">📵</div>
+                  <p className="font-semibold text-gray-900">No devices online</p>
+                  <p className="text-sm text-gray-500 mt-1">No field devices seen in the last 30 minutes</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-400 font-medium">{onlineDevices.length} device{onlineDevices.length !== 1 ? 's' : ''} active in last 30 min</p>
+                  {onlineDevices.map((d, i) => {
+                    const minsAgo = Math.round((Date.now() - new Date(d.online_at).getTime()) / 60000)
+                    return (
+                      <div key={d.device_id ?? i} className="bg-white rounded-xl shadow-sm p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-900 text-sm truncate">
+                              {d.user_name ?? 'Unknown user'}
+                            </p>
+                            <p className="text-xs text-gray-400 truncate mt-0.5">
+                              {d.device_name ? d.device_name.slice(0, 60) : d.device_id.slice(0, 12)}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {minsAgo < 1 ? 'Just now' : `${minsAgo}m ago`}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            {d.battery_level !== null && (
+                              <div className="flex items-center gap-1 justify-end">
+                                <div className="w-5 h-2.5 rounded-sm border border-gray-300 overflow-hidden">
+                                  <div
+                                    className={`h-full ${d.battery_level > 20 ? 'bg-green-500' : 'bg-red-500'}`}
+                                    style={{ width: `${d.battery_level}%` }}
+                                  />
+                                </div>
+                                <span className={`text-xs font-medium ${d.battery_level > 20 ? 'text-gray-600' : 'text-red-600'}`}>
+                                  {d.battery_level}%
+                                </span>
+                              </div>
+                            )}
+                            <span className="inline-block mt-1 w-2 h-2 rounded-full bg-green-400" title="Online" />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            )}
 
             {/* ── ANOMALIES TAB ────────────────────────────────────────────── */}
             {tab === 'anomalies' && (

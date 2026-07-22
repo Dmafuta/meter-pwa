@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { submitReading, getReadingHistory, type UnreadMeter, type MeterReadingHistory } from '../api'
-import { queueReading } from '../db'
+import { queueReading, loadHistoryCache } from '../db'
 
 // ── Quick-pick note templates ─────────────────────────────────────────────────
 const NOTE_TEMPLATES = [
@@ -162,8 +162,11 @@ export default function ReadingEntry({
     )
   }, [])
 
-  // Reading history (cache-backed)
+  // Reading history — hydrate from IndexedDB first, then update from network
   useEffect(() => {
+    loadHistoryCache(meter.id)
+      .then(cached => { if (cached && cached.length > 0) setHistory(cached as MeterReadingHistory[]) })
+      .catch(() => {})
     getReadingHistory(meter.id).then(setHistory).catch(() => {})
   }, [meter.id])
 
@@ -193,6 +196,10 @@ export default function ReadingEntry({
     avgConsumption !== null &&
     avgConsumption > 0 &&
     consumption > avgConsumption * 2
+
+  const isDuplicate = !isNaN(current) &&
+    meter.last_reading !== null &&
+    current === meter.last_reading
 
   // ── Photo ────────────────────────────────────────────────────────────────────
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -469,6 +476,13 @@ export default function ReadingEntry({
             <span className="capitalize">{meter.utility_type.replace('_', ' ')}</span>
           </p>
 
+          {history.length >= 2 && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <p className="text-xs text-gray-400 mb-1.5">Last {Math.min(history.length, 6)} readings</p>
+              <Sparkline data={history.slice(0, 6).reverse()} />
+            </div>
+          )}
+
           {consumption !== null && (
             <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
               <span className="text-sm text-gray-500">Consumption</span>
@@ -549,6 +563,11 @@ export default function ReadingEntry({
             {!isNaN(current) && meter.last_reading !== null && current < meter.last_reading && (
               <p className="text-yellow-700 text-xs bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mt-2">
                 ⚠ Reading ({current}) is below the previous ({meter.last_reading}). Please verify the meter display.
+              </p>
+            )}
+            {isDuplicate && (
+              <p className="text-blue-700 text-xs bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mt-2">
+                Same as previous reading. Confirm if the meter has not changed this period.
               </p>
             )}
             {Boolean(d.currentValue) && currentValue === String(d.currentValue) && (
@@ -802,6 +821,25 @@ export default function ReadingEntry({
           )
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Mini sparkline bar chart ──────────────────────────────────────────────────
+function Sparkline({ data }: { data: MeterReadingHistory[] }) {
+  const values = data.map(r => Number(r.units_consumed))
+  const max = Math.max(...values, 1)
+  return (
+    <div className="flex items-end gap-1 h-8">
+      {values.map((v, i) => (
+        <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+          <div
+            className="w-full rounded-sm bg-green-400 opacity-80"
+            style={{ height: `${Math.max(4, Math.round((v / max) * 28))}px` }}
+            title={`${v.toFixed(1)} units`}
+          />
+        </div>
+      ))}
     </div>
   )
 }
