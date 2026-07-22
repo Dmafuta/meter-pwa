@@ -45,27 +45,51 @@ export default function ReadingEntry({
   onSubmitted: () => void
   onBack: () => void
 }) {
-  const [currentValue, setCurrentValue]     = useState('')
-  const [notes, setNotes]                   = useState('')
-  const [showNotes, setShowNotes]           = useState(false)
-  const [sealNumber, setSealNumber]         = useState('')
-  const [tampered, setTampered]             = useState(false)
+  // ── Draft persistence ───────────────────────────────────────────────────────
+  const draftKey = `draft_${meter.id}_${period}`
+  const initDraft = (): Record<string, unknown> => {
+    try { return JSON.parse(localStorage.getItem(draftKey) ?? 'null') ?? {} } catch { return {} }
+  }
+  const d = initDraft()
+
+  const [currentValue, setCurrentValue]     = useState(() => String(d.currentValue ?? ''))
+  const [notes, setNotes]                   = useState(() => String(d.notes ?? ''))
+  const [showNotes, setShowNotes]           = useState(() => Boolean(d.notes))
+  const [sealNumber, setSealNumber]         = useState(() => String(d.sealNumber ?? ''))
+  const [tampered, setTampered]             = useState(() => Boolean(d.tampered ?? false))
   const [photo, setPhoto]                   = useState<string | null>(null)
   const [loading, setLoading]               = useState(false)
   const [error, setError]                   = useState('')
   const [success, setSuccess]               = useState(false)
-  const [gps, setGps]                       = useState<{ lat: number; lng: number } | null>(null)
+  const [gps, setGps]                       = useState<{ lat: number; lng: number; accuracy: number } | null>(null)
   const [showInaccessible, setShowInaccessible] = useState(false)
   const [showConfirm, setShowConfirm]       = useState(false)
   const [history, setHistory]               = useState<MeterReadingHistory[]>([])
   const [showHistory, setShowHistory]       = useState(false)
+  const [storageWarning, setStorageWarning] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
-  // GPS on mount
+  // Save draft whenever fields change
+  useEffect(() => {
+    if (success) return
+    const data: Record<string, unknown> = {}
+    if (currentValue) data.currentValue = currentValue
+    if (notes)        data.notes        = notes
+    if (sealNumber)   data.sealNumber   = sealNumber
+    if (tampered)     data.tampered     = tampered
+    if (Object.keys(data).length > 0) {
+      localStorage.setItem(draftKey, JSON.stringify(data))
+    } else {
+      localStorage.removeItem(draftKey)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentValue, notes, sealNumber, tampered, success])
+
+  // GPS on mount (with accuracy)
   useEffect(() => {
     if (!navigator.geolocation) return
     navigator.geolocation.getCurrentPosition(
-      pos => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      pos => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
       () => {},
       { timeout: 8000, maximumAge: 60000 }
     )
@@ -105,6 +129,12 @@ export default function ReadingEntry({
     reader.onload = async () => {
       const compressed = await compressPhoto(reader.result as string)
       setPhoto(compressed)
+      // Check storage quota
+      if (navigator.storage?.estimate) {
+        navigator.storage.estimate().then(({ usage = 0, quota = 1 }) => {
+          if (usage / quota > 0.8) setStorageWarning(true)
+        }).catch(() => {})
+      }
     }
     reader.readAsDataURL(file)
   }
@@ -128,6 +158,7 @@ export default function ReadingEntry({
     try {
       await submitReading(meter.id, current, period, photo ?? undefined, notes || undefined,
         gps?.lat, gps?.lng, sealNumber || undefined, tampered || undefined)
+      localStorage.removeItem(draftKey)
       setSuccess(true)
       navigator.vibrate?.(100)
       setShowConfirm(false)
@@ -143,6 +174,7 @@ export default function ReadingEntry({
           sealNumber: sealNumber || undefined, tampered: tampered || undefined,
           queuedAt: Date.now(),
         })
+        localStorage.removeItem(draftKey)
         setSuccess(true)
         navigator.vibrate?.(200)
         setShowConfirm(false)
@@ -275,7 +307,7 @@ export default function ReadingEntry({
         <h1 className="text-2xl font-bold">{meter.unit_label}</h1>
         <p className="text-green-200 text-sm mt-0.5">
           #{meter.meter_number} · {formatPeriod(period)}
-          {gps && <span className="ml-2 text-green-300">· GPS ✓</span>}
+          {gps && <span className="ml-2 text-green-300">· GPS ✓{gps.accuracy ? ` ±${Math.round(gps.accuracy)}m` : ''}</span>}
         </p>
       </div>
 
@@ -330,6 +362,14 @@ export default function ReadingEntry({
               required
               autoFocus
             />
+            {!isNaN(current) && meter.last_reading !== null && current < meter.last_reading && (
+              <p className="text-yellow-700 text-xs bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mt-2">
+                ⚠ Reading ({current}) is below the previous ({meter.last_reading}). Please verify the meter display.
+              </p>
+            )}
+            {Boolean(d.currentValue) && currentValue === String(d.currentValue) && (
+              <p className="text-indigo-600 text-xs mt-1">Draft restored</p>
+            )}
           </div>
 
           {/* Photo */}
@@ -371,6 +411,12 @@ export default function ReadingEntry({
               </button>
             )}
           </div>
+
+          {storageWarning && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+              <p className="text-xs text-orange-700 font-medium">⚠ Device storage is nearly full. Sync offline readings to free space.</p>
+            </div>
+          )}
 
           {/* Seal number */}
           <div>

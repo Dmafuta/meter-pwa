@@ -1,5 +1,10 @@
-import { useState, useEffect } from 'react'
-import { getReadingProgress, getReaderPerformance, getUnreadMeters, getAnomalyReadings, type ReadingProgress, type ReaderPerformance, type UnreadMeter, type ReadMeter } from '../api'
+import { useState, useEffect, useCallback } from 'react'
+import {
+  getReadingProgress, getReaderPerformance, getUnreadMeters, getAnomalyReadings,
+  getAssignmentSummary, getAvailableReaders, assignByBlock, clearByBlock,
+  type ReadingProgress, type ReaderPerformance, type UnreadMeter, type ReadMeter,
+  type AssignmentPhase, type AvailableReader,
+} from '../api'
 
 function formatPeriod(p: string): string {
   const [year, month] = p.split('-')
@@ -18,7 +23,7 @@ export default function SupervisorDashboard({
   onGoToList: () => void
   onLogout: () => void
 }) {
-  type DashTab = 'overview' | 'unread' | 'anomalies'
+  type DashTab = 'overview' | 'unread' | 'anomalies' | 'assign'
 
   const [tab, setTab]                   = useState<DashTab>('overview')
   const [progress, setProgress]         = useState<ReadingProgress | null>(null)
@@ -48,6 +53,14 @@ export default function SupervisorDashboard({
       setError('Failed to load supervisor data.')
     }).finally(() => setLoading(false))
   }, [period, refreshKey])
+
+  // Auto-refresh every 30s when page is visible
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!document.hidden) setRefreshKey(k => k + 1)
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -94,6 +107,7 @@ export default function SupervisorDashboard({
           { key: 'overview',  label: 'Overview' },
           { key: 'unread',    label: `Unread${!loading && progress ? ` (${progress.total_unread})` : ''}` },
           { key: 'anomalies', label: `Anomalies${!loading && anomalyReadings.length > 0 ? ` (${anomalyReadings.length})` : ''}` },
+          { key: 'assign',    label: 'Assign' },
         ] as { key: DashTab; label: string }[]).map(t => (
           <button
             key={t.key}
@@ -191,9 +205,21 @@ export default function SupervisorDashboard({
                 </div>
               ) : (
                 <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">
-                    {unreadMeters.length} meter{unreadMeters.length !== 1 ? 's' : ''} not yet read
-                  </p>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                      {unreadMeters.length} meter{unreadMeters.length !== 1 ? 's' : ''} not yet read
+                    </p>
+                    <button
+                      onClick={() => exportUnreadCsv(unreadMeters, period)}
+                      className="text-indigo-600 active:text-indigo-800"
+                      title="Export CSV"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                      </svg>
+                    </button>
+                  </div>
                   <div className="divide-y divide-gray-50">
                     {unreadMeters.map(m => (
                       <div key={m.id} className="flex items-center gap-3 px-4 py-3">
@@ -210,6 +236,9 @@ export default function SupervisorDashboard({
                 </div>
               )
             )}
+
+            {/* ── ASSIGN TAB ───────────────────────────────────────────────── */}
+            {tab === 'assign' && <AssignTab period={period} />}
 
             {/* ── ANOMALIES TAB ────────────────────────────────────────────── */}
             {tab === 'anomalies' && (
@@ -254,6 +283,150 @@ export default function SupervisorDashboard({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function exportUnreadCsv(meters: UnreadMeter[], period: string) {
+  const rows = ['Unit Label,Meter Number,Utility Type,Last Reading,Last Reading Date']
+  meters.forEach(m => rows.push([
+    `"${(m.unit_label ?? '').replace(/"/g, '""')}"`,
+    m.meter_number,
+    m.utility_type.replace('_', ' '),
+    m.last_reading ?? '',
+    m.last_reading_date ?? '',
+  ].join(',')))
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `unread-meters-${period}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function AssignTab({ period }: { period: string }) {
+  const [summary, setSummary]   = useState<AssignmentPhase[]>([])
+  const [readers, setReaders]   = useState<AvailableReader[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState('')
+  const [saving, setSaving]     = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [sum, rds] = await Promise.all([getAssignmentSummary(period), getAvailableReaders()])
+      setSummary(sum)
+      setReaders(rds)
+      // Expand all phases by default
+      setExpanded(new Set(sum.map(p => p.phase)))
+    } catch {
+      setError('Failed to load assignment data.')
+    } finally {
+      setLoading(false)
+    }
+  }, [period])
+
+  useEffect(() => { void load() }, [load])
+
+  async function handleAssign(block: string, readerId: string, readerName: string) {
+    setSaving(block)
+    try {
+      if (!readerId) {
+        await clearByBlock(period, block)
+      } else {
+        await assignByBlock(period, block, readerId, readerName)
+      }
+      await load()
+    } catch { /* ignore */ }
+    finally { setSaving(null) }
+  }
+
+  function togglePhase(phase: string) {
+    setExpanded(s => {
+      const n = new Set(s)
+      n.has(phase) ? n.delete(phase) : n.add(phase)
+      return n
+    })
+  }
+
+  if (loading) return (
+    <div className="flex justify-center py-16">
+      <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+  if (error) return <div className="text-center py-12 text-gray-500">{error}</div>
+  if (readers.length === 0) return (
+    <div className="text-center py-12 text-gray-500 px-4">
+      <p className="font-semibold text-gray-900 mb-1">No meter readers found</p>
+      <p className="text-sm">Invite users with Meter Reader or Field Technician roles first.</p>
+    </div>
+  )
+
+  return (
+    <div className="space-y-3">
+      {summary.map(phase => (
+        <div key={phase.phase} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <button
+            onClick={() => togglePhase(phase.phase)}
+            className="w-full flex items-center justify-between px-4 py-3"
+          >
+            <div className="text-left">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{phase.phase}</p>
+              <p className="text-sm text-gray-600 mt-0.5">
+                {phase.assigned_meters}/{phase.total_meters} meters assigned
+              </p>
+            </div>
+            <svg
+              className={`w-4 h-4 text-gray-400 transition-transform ${expanded.has(phase.phase) ? 'rotate-180' : ''}`}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {expanded.has(phase.phase) && (
+            <div className="border-t border-gray-100 divide-y divide-gray-50">
+              {phase.blocks.map(block => {
+                const primaryReader = block.readers[0]
+                const currentReaderId = primaryReader?.reader_user_id ?? ''
+                return (
+                  <div key={block.block} className="px-4 py-3 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0">
+                      <span className="text-sm font-bold text-indigo-700">{block.block}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-400">{block.assigned_meters}/{block.total_meters} meters</p>
+                      {saving === block.block ? (
+                        <p className="text-xs text-indigo-600 mt-1">Saving…</p>
+                      ) : (
+                        <select
+                          value={currentReaderId}
+                          onChange={e => {
+                            const r = readers.find(r => r.id === e.target.value)
+                            void handleAssign(block.block, e.target.value, r?.full_name ?? '')
+                          }}
+                          disabled={saving !== null}
+                          className="mt-1 w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-40"
+                        >
+                          <option value="">— Unassigned —</option>
+                          {readers.map(r => (
+                            <option key={r.id} value={r.id}>{r.full_name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+      {summary.length === 0 && (
+        <div className="text-center py-12 text-gray-400 text-sm">No active consumer meters found.</div>
+      )}
     </div>
   )
 }

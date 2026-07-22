@@ -67,3 +67,45 @@ input:-webkit-autofill:focus {
     linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
   background-size: 32px 32px;
 }
+
+/* High-contrast field mode (outdoor / bright sunlight) */
+.high-contrast {
+  font-size: 1.08rem;
+}
+.high-contrast .bg-gray-50,
+.high-contrast .bg-white {
+  background-color: #0d0d0d !important;
+}
+.high-contrast .text-gray-900,
+.high-contrast .text-gray-800,
+.high-contrast .text-gray-700 {
+  color: #fff !important;
+}
+.high-contrast .text-gray-500,
+.high-contrast .text-gray-400,
+.high-contrast .text-gray-300 {
+  color: #bbb !important;
+}
+.high-contrast .border-gray-200,
+.high-contrast .border-gray-100,
+.high-contrast .divide-gray-50 > * {
+  border-color: #333 !important;
+}
+.high-contrast .shadow-sm {
+  box-shadow: 0 0 0 1px #333 !important;
+}
+.high-contrast .bg-green-50 {
+  background-color: #002200 !important;
+}
+.high-contrast .bg-orange-50 {
+  background-color: #2a1000 !important;
+}
+.high-contrast .bg-red-50 {
+  background-color: #1a0000 !important;
+}
+.high-contrast .bg-blue-50 {
+  background-color: #00001a !important;
+}
+.high-contrast .bg-gray-100 {
+  background-color: #1a1a1a !important;
+}

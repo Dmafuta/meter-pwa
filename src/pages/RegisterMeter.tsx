@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { listUnits, registerMeter, type UnitSummary } from '../api'
+import { listUnits, registerMeter, checkMeterNumber, type UnitSummary } from '../api'
 
 const UTILITY_TYPES = [
   { value: 'water',       label: 'Water' },
@@ -41,8 +41,15 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
   // Barcode scan
   const [scanning, setScanning]       = useState(false)
   const [scanError, setScanError]     = useState('')
+  const [hasTorch, setHasTorch]       = useState(false)
+  const [torchOn, setTorchOn]         = useState(false)
   const videoRef                      = useRef<HTMLVideoElement>(null)
   const streamRef                     = useRef<MediaStream | null>(null)
+  const trackRef                      = useRef<MediaStreamTrack | null>(null)
+
+  // Duplicate number check
+  const [numberStatus, setNumberStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
+  const checkTimerRef                   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isConsumer = meterRole === 'consumer'
 
@@ -61,11 +68,40 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
     .filter(u => unitSearch.trim() === '' || u.unit_label.toLowerCase().includes(unitSearch.toLowerCase()))
     .slice(0, 20)
 
+  // Debounced duplicate number check
+  useEffect(() => {
+    const num = meterNumber.trim()
+    if (!num) { setNumberStatus('idle'); return }
+    setNumberStatus('checking')
+    if (checkTimerRef.current) clearTimeout(checkTimerRef.current)
+    checkTimerRef.current = setTimeout(async () => {
+      try {
+        const result = await checkMeterNumber(num)
+        setNumberStatus(result.exists ? 'taken' : 'available')
+      } catch {
+        setNumberStatus('idle')
+      }
+    }, 600)
+    return () => { if (checkTimerRef.current) clearTimeout(checkTimerRef.current) }
+  }, [meterNumber])
+
   // ── Barcode scanning ──────────────────────────────────────────────────────
+
+  async function toggleTorch() {
+    const track = trackRef.current
+    if (!track) return
+    const next = !torchOn
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] })
+      setTorchOn(next)
+    } catch { /* torch not supported */ }
+  }
 
   async function startScan() {
     setScanError('')
     setScanning(true)
+    setHasTorch(false)
+    setTorchOn(false)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' }
@@ -74,6 +110,13 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         videoRef.current.play()
+      }
+      // Probe for torch capability
+      const track = stream.getVideoTracks()[0]
+      if (track) {
+        trackRef.current = track
+        const caps = (track.getCapabilities as (() => Record<string, unknown>) | undefined)?.()
+        if (caps?.['torch']) setHasTorch(true)
       }
 
       // Use BarcodeDetector if available
@@ -107,7 +150,9 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
   function stopScan() {
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
+    trackRef.current  = null
     setScanning(false)
+    setTorchOn(false)
   }
 
   useEffect(() => () => stopScan(), [])
@@ -147,6 +192,7 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
     setMeterNumber(''); setUnitSearch(''); setSelectedUnit(null)
     setLastReading(''); setLastReadingDate(new Date().toISOString().slice(0, 10))
     setAccountNumber(''); setNotes(''); setError(''); setSuccess(false)
+    setNumberStatus('idle')
   }
 
   // ── Success screen ────────────────────────────────────────────────────────
@@ -182,9 +228,20 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
       <div className="fixed inset-0 bg-black z-50 flex flex-col">
         <div className="flex items-center justify-between px-4 pt-12 pb-3 safe-top">
           <p className="text-white font-semibold">Point camera at barcode</p>
-          <button onClick={stopScan} className="text-white text-sm px-3 py-1 border border-white/40 rounded-lg">
-            Cancel
-          </button>
+          <div className="flex items-center gap-2">
+            {hasTorch && (
+              <button
+                onClick={() => void toggleTorch()}
+                className={`text-sm px-3 py-1 rounded-lg border ${torchOn ? 'bg-yellow-400 border-yellow-300 text-black' : 'border-white/40 text-white'}`}
+                title="Toggle flashlight"
+              >
+                {torchOn ? 'Light off' : 'Light on'}
+              </button>
+            )}
+            <button onClick={stopScan} className="text-white text-sm px-3 py-1 border border-white/40 rounded-lg">
+              Cancel
+            </button>
+          </div>
         </div>
         <div className="flex-1 relative">
           <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
@@ -246,6 +303,9 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
               </svg>
             </button>
           </div>
+          {numberStatus === 'checking'  && <p className="text-xs text-gray-400 mt-1">Checking…</p>}
+          {numberStatus === 'available' && <p className="text-xs text-green-600 mt-1">✓ Available</p>}
+          {numberStatus === 'taken'     && <p className="text-xs text-red-600 mt-1">✗ Already registered in the system</p>}
         </div>
 
         {/* Utility type */}

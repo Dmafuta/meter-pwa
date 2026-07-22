@@ -24,6 +24,12 @@ function formatElapsed(seconds: number): string {
   return `${s}s`
 }
 
+function formatSynced(d: Date): string {
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  return `${mins}m ago`
+}
+
 export default function MeterList({
   period,
   refreshKey,
@@ -56,6 +62,8 @@ export default function MeterList({
   const [utilityFilter, setUtilityFilter] = useState<string>('all')
   const [elapsed, setElapsed]             = useState(0)
   const [pullProgress, setPullProgress]   = useState(0)
+  const [lastSynced, setLastSynced]       = useState<Date | null>(null)
+  const [highContrast, setHighContrast]   = useState(() => localStorage.getItem('pwa_hc') === '1')
   const completedAt                       = useRef<number | null>(null)
   const touchStartY                       = useRef(0)
   const bodyRef                           = useRef<HTMLDivElement>(null)
@@ -94,6 +102,7 @@ export default function MeterList({
       if (unread.length === 0 && completedAt.current === null) {
         completedAt.current = Date.now()
       }
+      setLastSynced(new Date())
     } catch (e: unknown) {
       const status = (e as { status?: number }).status
       if (status === 403)      setError('No permission to view meters. Contact your administrator.')
@@ -214,9 +223,17 @@ export default function MeterList({
     )
   }
 
+  // High-contrast helpers
+  const hcClass = highContrast ? ' high-contrast' : ''
+  function toggleHC() {
+    const next = !highContrast
+    setHighContrast(next)
+    localStorage.setItem('pwa_hc', next ? '1' : '0')
+  }
+
   // ── Normal list ──────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className={`flex flex-col min-h-screen bg-gray-50${hcClass}`}>
 
       {/* Header */}
       <div className="bg-green-600 text-white px-4 pt-12 pb-4 safe-top">
@@ -231,6 +248,14 @@ export default function MeterList({
             {formatPeriod(period)}
           </button>
           <div className="flex items-center gap-3">
+            {lastSynced && !loading && (
+              <span className="text-green-300 text-xs">Synced {formatSynced(lastSynced)}</span>
+            )}
+            <button
+              onClick={toggleHC}
+              className={`text-xs font-bold px-1.5 py-0.5 rounded border ${highContrast ? 'border-white text-white bg-white/20' : 'border-green-400/60 text-green-300'}`}
+              title="Toggle high-contrast mode"
+            >HC</button>
             {onRegister && (
               <button onClick={onRegister} className="text-green-200 active:text-white" title="Register new meter">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

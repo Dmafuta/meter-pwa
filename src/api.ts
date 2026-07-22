@@ -279,3 +279,61 @@ export interface AssignedMeter {
 export function getMyAssignments(period: string): Promise<AssignedMeter[]> {
   return apiFetch(`/reading-assignments/mine?period=${encodeURIComponent(period)}`)
 }
+
+// ── Assignment management (supervisor) ────────────────────────────────────────
+
+export interface AssignmentReader {
+  reader_user_id: string
+  reader_name: string
+  meter_count: number
+  completed: number
+  pending: number
+}
+
+export interface AssignmentBlock {
+  block: string
+  total_meters: number
+  assigned_meters: number
+  readers: AssignmentReader[]
+}
+
+export interface AssignmentPhase {
+  phase: string
+  total_meters: number
+  assigned_meters: number
+  blocks: AssignmentBlock[]
+}
+
+export interface AvailableReader {
+  id: string
+  full_name: string
+  email: string
+  role: string | null
+}
+
+export function getAssignmentSummary(period: string): Promise<AssignmentPhase[]> {
+  return apiFetch(`/reading-assignments/summary?period=${encodeURIComponent(period)}`)
+}
+
+export function getAvailableReaders(): Promise<AvailableReader[]> {
+  return apiFetch('/reading-assignments/readers')
+}
+
+export function assignByBlock(
+  period: string, block: string, readerUserId: string, readerName: string
+): Promise<{ assigned: number; block: string }> {
+  return apiFetch('/reading-assignments/by-block', {
+    method: 'POST',
+    body: JSON.stringify({ billing_period: period, block, reader_user_id: readerUserId, reader_name: readerName }),
+  })
+}
+
+export function clearByBlock(period: string, block: string): Promise<{ cleared: number; block: string }> {
+  return apiFetch(`/reading-assignments/by-block?period=${encodeURIComponent(period)}&block=${encodeURIComponent(block)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function checkMeterNumber(number: string): Promise<{ exists: boolean }> {
+  return apiFetch(`/meters/check?number=${encodeURIComponent(number)}`)
+}
