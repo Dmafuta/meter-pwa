@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getUnreadMeters, getReadMeters, getMyAssignments, submitReading, type UnreadMeter, type ReadMeter } from '../api'
 import { countPending, queueReading } from '../db'
+import { syncPendingWithProgress } from '../sync'
 
 const UTILITY_BADGE: Record<string, string> = {
   water:       'bg-blue-100 text-blue-700',
@@ -72,7 +73,11 @@ export default function MeterList({
   const [soundOn, setSoundOn]             = useState(() => localStorage.getItem('pwa_sound') !== '0')
   const [skipConfirm, setSkipConfirm]     = useState(() => localStorage.getItem('pwa_skip_confirm') === '1')
   const [isOnline, setIsOnline]           = useState(() => navigator.onLine)
+  const [syncing, setSyncing]             = useState(false)
+  const [visibleCount, setVisibleCount]   = useState(50)
   const completedAt                       = useRef<number | null>(null)
+  const sentinelRef                       = useRef<HTMLDivElement>(null)
+  const filteredLenRef                    = useRef(0)
   const touchStartY                       = useRef(0)
   const bodyRef                           = useRef<HTMLDivElement>(null)
   const longPressRef                      = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -162,6 +167,18 @@ export default function MeterList({
 
   useEffect(() => { void load() }, [load, refreshKey])
 
+  // Intersection observer: load more items as user scrolls toward sentinel
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || visibleCount >= filteredLenRef.current) return
+    const obs = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting)
+        setVisibleCount(c => Math.min(c + 50, filteredLenRef.current))
+    }, { threshold: 0.1 })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [visibleCount])
+
   // Pull-to-refresh handlers
   function handleTouchStart(e: React.TouchEvent) {
     touchStartY.current = e.touches[0].clientY
@@ -177,6 +194,18 @@ export default function MeterList({
     setPullProgress(0)
   }
 
+  // Sync now handler (for inline banner button)
+  async function handleSyncNow() {
+    if (syncing || !navigator.onLine) return
+    setSyncing(true)
+    await syncPendingWithProgress(() => {}, () => {})
+    setPending(await countPending())
+    setSyncing(false)
+  }
+
+  // Reset visible count when search/filter changes
+  useEffect(() => { setVisibleCount(50) }, [query, utilityFilter])
+
   // Collect unique utility types for the filter chips
   const utilityTypes = useMemo(() => {
     const types = [...new Set(meters.map(m => m.utility_type))]
@@ -191,6 +220,7 @@ export default function MeterList({
     return true
   })
 
+  filteredLenRef.current = filtered.length   // keep ref in sync for intersection observer
   const total    = meters.length + readMeters.length
   const progress = total > 0 ? Math.round((readMeters.length / total) * 100) : 0
 
@@ -222,6 +252,21 @@ export default function MeterList({
           <div className="mt-6 bg-white rounded-2xl shadow-sm w-full max-w-xs p-5 space-y-3">
             <Stat label="Meters read" value={String(readMeters.length)} />
             <Stat label="Time taken"  value={duration} />
+            {readMeters.length > 1 && (
+              <Stat label="Avg per meter" value={formatElapsed(Math.floor(
+                ((completedAt.current ?? Date.now()) - sessionStart) / 1000 / readMeters.length
+              ))} />
+            )}
+            {(() => {
+              const inacc    = readMeters.filter(r => r.notes?.includes('inaccessible')).length
+              const anomalies = readMeters.filter(r => r.anomaly).length
+              const tampered  = readMeters.filter(r => r.tampered).length
+              return <>
+                {inacc     > 0 && <Stat label="Inaccessible" value={String(inacc)}     highlight />}
+                {anomalies > 0 && <Stat label="Anomalies"    value={String(anomalies)} highlight />}
+                {tampered  > 0 && <Stat label="Tampered"     value={String(tampered)}  highlight />}
+              </>
+            })()}
             {pending > 0 && <Stat label="Queued offline" value={String(pending)} highlight />}
           </div>
 
@@ -478,6 +523,20 @@ export default function MeterList({
         </div>
       )}
 
+      {/* Sync-now banner — online with pending items */}
+      {isOnline && pending > 0 && !loading && (
+        <div className="bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center justify-between gap-2">
+          <p className="text-xs text-indigo-700 font-medium">{pending} reading{pending !== 1 ? 's' : ''} waiting to sync</p>
+          <button
+            onClick={() => void handleSyncNow()}
+            disabled={syncing}
+            className="text-xs font-semibold text-indigo-700 bg-indigo-100 px-2.5 py-1 rounded-lg disabled:opacity-50 active:bg-indigo-200"
+          >
+            {syncing ? 'Syncing…' : 'Sync now'}
+          </button>
+        </div>
+      )}
+
       {/* Offline stale-data banner */}
       {!isOnline && lastSynced && (
         <div className="bg-orange-50 border-b border-orange-100 px-4 py-2 flex items-center gap-2">
@@ -547,7 +606,7 @@ export default function MeterList({
                 {q ? `No meters match "${query}"` : `No unread ${utilityFilter.replace('_', ' ')} meters`}
               </div>
             ) : (
-              filtered.map((m, idx) => {
+              filtered.slice(0, visibleCount).map((m, idx) => {
                 const days = daysSince(m.last_reading_date)
                 const isOverdue = days !== null && days > 35
                 return (
@@ -589,6 +648,13 @@ export default function MeterList({
                   </button>
                 )
               })
+            )}
+
+            {/* Load-more sentinel for large lists */}
+            {visibleCount < filtered.length && (
+              <div ref={sentinelRef} className="py-3 text-center text-xs text-gray-400">
+                {filtered.length - visibleCount} more…
+              </div>
             )}
 
             {/* Already-read section */}

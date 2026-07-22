@@ -143,6 +143,7 @@ export function submitReading(
 ): Promise<unknown> {
   return apiFetch(`/meters/${meterId}/readings`, {
     method: 'POST',
+    headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       current_value: currentValue,
       billing_period: billingPeriod,
@@ -220,8 +221,14 @@ export interface MeterReadingHistory {
   status: string
 }
 
+// In-memory cache so prefetching next meter's history feels instant
+const _historyCache = new Map<string, MeterReadingHistory[]>()
+
 export async function getReadingHistory(meterId: string): Promise<MeterReadingHistory[]> {
-  return apiFetch(`/meters/${meterId}/readings`)
+  if (_historyCache.has(meterId)) return _historyCache.get(meterId)!
+  const data = await apiFetch<MeterReadingHistory[]>(`/meters/${meterId}/readings`)
+  _historyCache.set(meterId, data)
+  return data
 }
 
 // ── Meter registration ─────────────────────────────────────────────────────────

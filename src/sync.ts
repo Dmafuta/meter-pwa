@@ -26,7 +26,15 @@ export async function syncPending(): Promise<number> {
       await syncItem(item)
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
-      await markFailed(item.id!, err instanceof Error ? err.message : 'Unknown error')
+      if (status === 409) {
+        // Already read by another user — discard without retrying
+        await removePending(item.id!)
+        continue
+      }
+      const msg = status === 409
+        ? 'Already read by another user'
+        : (err instanceof Error ? err.message : 'Unknown error')
+      await markFailed(item.id!, msg)
       if (status && status >= 400 && status < 500) {
         const updated = (item.failCount ?? 0) + 1
         if (updated >= MAX_RETRIES) {
@@ -50,7 +58,12 @@ export async function syncPendingWithProgress(
     try {
       await syncItem(item)
     } catch (err: unknown) {
-      await markFailed(item.id!, err instanceof Error ? err.message : 'Unknown error')
+      const status = (err as { status?: number }).status
+      if (status === 409) {
+        await removePending(item.id!)
+      } else {
+        await markFailed(item.id!, err instanceof Error ? err.message : 'Unknown error')
+      }
     }
     onItemDone(item.id!)
   }

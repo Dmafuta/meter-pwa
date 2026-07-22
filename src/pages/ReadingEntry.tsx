@@ -94,9 +94,13 @@ export default function ReadingEntry({
   const [history, setHistory]               = useState<MeterReadingHistory[]>([])
   const [showHistory, setShowHistory]       = useState(false)
   const [storageWarning, setStorageWarning] = useState(false)
+  const [listening, setListening]           = useState(false)
+  const [flagReview, setFlagReview]         = useState(false)
+  const [photoScale, setPhotoScale]         = useState(1)
   const photoInputRef   = useRef<HTMLInputElement>(null)
   const advancedRef     = useRef(false)
   const touchStartXRef  = useRef(0)
+  const pinchRef        = useRef({ startDist: 0, startScale: 1 })
 
   // Call-once wrapper so swipe and the scheduled timeout don't both fire
   function doAdvance() {
@@ -131,10 +135,16 @@ export default function ReadingEntry({
     )
   }, [])
 
-  // Reading history
+  // Reading history (cache-backed)
   useEffect(() => {
     getReadingHistory(meter.id).then(setHistory).catch(() => {})
   }, [meter.id])
+
+  // Prefetch next meter's history while user reviews current reading
+  useEffect(() => {
+    if (nextMeter) getReadingHistory(nextMeter.id).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextMeter?.id])
 
   // Electricity and gas meters show decimals; water meters are whole-number
   const isDecimalMeter = meter.utility_type === 'electricity' || meter.utility_type === 'gas'
@@ -178,6 +188,35 @@ export default function ReadingEntry({
   const skipConfirm = localStorage.getItem('pwa_skip_confirm') === '1'
   const soundOn     = localStorage.getItem('pwa_sound') !== '0'  // on by default
 
+  // ── Voice input ──────────────────────────────────────────────────────────────
+  const hasSpeech = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window
+  function startVoice() {
+    const w = window as unknown as Record<string, unknown>
+    const SR = (w.SpeechRecognition ?? w.webkitSpeechRecognition) as (new () => {
+      lang: string; interimResults: boolean; maxAlternatives: number
+      onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+      onerror: (() => void) | null; onend: (() => void) | null; start(): void
+    }) | undefined
+    if (!SR) return
+    const recog = new SR()
+    recog.lang = 'en-US'; recog.interimResults = false; recog.maxAlternatives = 1
+    setListening(true)
+    recog.onresult = e => {
+      const spoken = e.results[0][0].transcript.replace(/[^0-9.]/g, '')
+      if (spoken) { setCurrentValue(spoken); setError('') }
+      setListening(false)
+    }
+    recog.onerror = () => setListening(false)
+    recog.onend   = () => setListening(false)
+    recog.start()
+  }
+
+  // ── Pinch-to-zoom helpers ─────────────────────────────────────────────────────
+  function getPinchDist(e: React.TouchEvent) {
+    if (e.touches.length < 2) return 0
+    return Math.hypot(e.touches[1].clientX - e.touches[0].clientX, e.touches[1].clientY - e.touches[0].clientY)
+  }
+
   // ── Submit → open confirmation (or skip if preference set) ──────────────────
   function handleSubmitClick(e: React.FormEvent) {
     e.preventDefault()
@@ -199,8 +238,9 @@ export default function ReadingEntry({
   async function confirmSubmit() {
     setLoading(true)
     setError('')
+    const effectiveNotes = [notes || '', flagReview ? 'Flagged for supervisor review' : ''].filter(Boolean).join('; ') || undefined
     try {
-      await submitReading(meter.id, current, period, photo ?? undefined, notes || undefined,
+      await submitReading(meter.id, current, period, photo ?? undefined, effectiveNotes,
         gps?.lat, gps?.lng, sealNumber || undefined, tampered || undefined)
       localStorage.removeItem(draftKey)
       setSuccess(true)
@@ -214,7 +254,7 @@ export default function ReadingEntry({
         await queueReading({
           meterId: meter.id, meterNumber: meter.meter_number, unitLabel: meter.unit_label,
           currentValue: current, billingPeriod: period,
-          photoBase64: photo ?? undefined, notes: notes || undefined,
+          photoBase64: photo ?? undefined, notes: effectiveNotes,
           latitude: gps?.lat, longitude: gps?.lng,
           sealNumber: sealNumber || undefined, tampered: tampered || undefined,
           queuedAt: Date.now(),
@@ -420,17 +460,56 @@ export default function ReadingEntry({
           {/* Reading input */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Current Reading</label>
-            <input
-              type="number"
-              inputMode={isDecimalMeter ? 'decimal' : 'numeric'}
-              step={isDecimalMeter ? '0.001' : '1'}
-              value={currentValue}
-              onChange={e => { setCurrentValue(e.target.value); setError('') }}
-              className="w-full border-2 border-gray-200 rounded-xl px-4 py-4 text-3xl font-bold text-center text-gray-900 focus:outline-none focus:border-green-500 transition-colors"
-              placeholder={isDecimalMeter ? '0.000' : '0'}
-              required
-              autoFocus
-            />
+            <div className="relative">
+              <input
+                type="number"
+                inputMode={isDecimalMeter ? 'decimal' : 'numeric'}
+                step={isDecimalMeter ? '0.001' : '1'}
+                value={currentValue}
+                onChange={e => { setCurrentValue(e.target.value); setError('') }}
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-4 text-3xl font-bold text-center text-gray-900 focus:outline-none focus:border-green-500 transition-colors"
+                placeholder={isDecimalMeter ? '0.000' : '0'}
+                required
+                autoFocus
+              />
+              {hasSpeech && (
+                <button
+                  type="button"
+                  onClick={startVoice}
+                  disabled={listening}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 active:bg-gray-200 disabled:opacity-50"
+                  title="Speak reading"
+                >
+                  {listening
+                    ? <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                    : <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                  }
+                </button>
+              )}
+            </div>
+            {/* Nudge buttons */}
+            {!isNaN(current) && (
+              <div className="flex items-center gap-1.5 mt-2">
+                {(isDecimalMeter ? [-0.1, -0.01, +0.01, +0.1] : [-10, -1, +1, +10]).map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => {
+                      const next = isDecimalMeter
+                        ? parseFloat((current + n).toFixed(3))
+                        : Math.round(current + n)
+                      setCurrentValue(String(next < 0 ? 0 : next))
+                      setError('')
+                    }}
+                    className="flex-1 py-1.5 text-xs font-semibold text-gray-600 bg-gray-100 rounded-lg active:bg-gray-200"
+                  >
+                    {n > 0 ? `+${n}` : n}
+                  </button>
+                ))}
+              </div>
+            )}
             {!isNaN(current) && meter.last_reading !== null && current < meter.last_reading && (
               <p className="text-yellow-700 text-xs bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mt-2">
                 ⚠ Reading ({current}) is below the previous ({meter.last_reading}). Please verify the meter display.
@@ -455,8 +534,23 @@ export default function ReadingEntry({
               onChange={e => void handlePhotoChange(e)}
             />
             {photo ? (
-              <div className="relative">
-                <img src={photo} alt="Meter" className="w-full h-40 object-cover rounded-xl" />
+              <div className="relative overflow-hidden rounded-xl">
+                <img
+                  src={photo}
+                  alt="Meter"
+                  className="w-full h-40 object-cover"
+                  style={{ transform: `scale(${photoScale})`, transformOrigin: 'center', transition: photoScale === 1 ? 'transform 0.2s' : 'none', touchAction: 'none' }}
+                  onTouchStart={e => {
+                    if (e.touches.length === 2) pinchRef.current = { startDist: getPinchDist(e), startScale: photoScale }
+                  }}
+                  onTouchMove={e => {
+                    if (e.touches.length === 2 && pinchRef.current.startDist > 0) {
+                      const scale = Math.max(1, Math.min(4, pinchRef.current.startScale * getPinchDist(e) / pinchRef.current.startDist))
+                      setPhotoScale(scale)
+                    }
+                  }}
+                  onTouchEnd={() => { if (photoScale < 1.15) setPhotoScale(1) }}
+                />
                 <button
                   type="button"
                   onClick={() => { setPhoto(null); if (photoInputRef.current) photoInputRef.current.value = '' }}
@@ -518,6 +612,28 @@ export default function ReadingEntry({
             <div className="text-left">
               <p className="text-sm font-semibold">{tampered ? 'Tamper/Fault Flagged' : 'Flag as Tampered / Faulty'}</p>
               {tampered && <p className="text-xs mt-0.5">Supervisor will be notified for inspection</p>}
+            </div>
+          </button>
+
+          {/* Flag for review — lighter than tampered */}
+          <button
+            type="button"
+            onClick={() => setFlagReview(v => !v)}
+            className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 border-2 transition-colors ${
+              flagReview
+                ? 'bg-yellow-50 border-yellow-400 text-yellow-700'
+                : 'bg-gray-50 border-gray-200 text-gray-500'
+            }`}
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+            </svg>
+            <div className="text-left">
+              <p className="text-sm font-semibold">
+                {flagReview ? 'Flagged for Review' : 'Flag for Supervisor Review'}
+              </p>
+              {flagReview && <p className="text-xs mt-0.5">Supervisor will inspect this reading</p>}
             </div>
           </button>
 

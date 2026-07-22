@@ -188,16 +188,23 @@ export default function SupervisorDashboard({
                 <div className="bg-white rounded-2xl shadow-sm p-5">
                   <div className="flex items-center justify-between mb-4">
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Reading Progress</p>
-                    {prevProgress && (() => {
-                      const delta = Number(progress.completion_pct) - Number(prevProgress.completion_pct)
-                      return (
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                          delta > 0 ? 'bg-green-50 text-green-700' : delta < 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-400'
-                        }`}>
-                          {delta > 0 ? '↑' : delta < 0 ? '↓' : '→'}{Math.abs(delta).toFixed(1)}% vs last
-                        </span>
-                      )
-                    })()}
+                    <div className="flex items-center gap-2">
+                      {prevProgress && (() => {
+                        const delta = Number(progress.completion_pct) - Number(prevProgress.completion_pct)
+                        return (
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            delta > 0 ? 'bg-green-50 text-green-700' : delta < 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-400'
+                          }`}>
+                            {delta > 0 ? '↑' : delta < 0 ? '↓' : '→'}{Math.abs(delta).toFixed(1)}% vs last
+                          </span>
+                        )
+                      })()}
+                      <button onClick={() => exportProgressCsv(progress, period)} title="Export CSV" className="text-indigo-400 active:text-indigo-600">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-20 h-20 rounded-full border-8 border-indigo-100 flex items-center justify-center shrink-0"
@@ -508,6 +515,21 @@ export default function SupervisorDashboard({
       </div>
     </div>
   )
+}
+
+function exportProgressCsv(progress: ReadingProgress, period: string) {
+  const rows = ['Reader,Readings']
+  progress.by_reader.forEach(r => rows.push([
+    `"${r.reader_name.replace(/"/g, '""')}"`, r.read_count,
+  ].join(',')))
+  rows.push(['"— TOTAL READ"', progress.total_read].join(','))
+  rows.push(['"— UNREAD"', progress.total_unread].join(','))
+  rows.push(['"— COMPLETION %"', Number(progress.completion_pct).toFixed(1)].join(','))
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url; a.download = `progress-${period}.csv`; a.click()
+  URL.revokeObjectURL(url)
 }
 
 function exportAnomalyCsv(readings: ReadMeter[], period: string) {
