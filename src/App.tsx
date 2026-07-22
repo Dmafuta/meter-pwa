@@ -171,6 +171,8 @@ export default function App() {
           meter={selectedMeter}
           period={period}
           nextMeter={nextMeter}
+          meterIndex={meterIndex}
+          totalMeters={meterQueue.length}
           onSubmitted={handleReadingSubmitted}
           onBack={() => setPage('list')}
         />

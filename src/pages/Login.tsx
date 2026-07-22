@@ -3,7 +3,7 @@ import { Gauge, Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-
 import { loginForToken } from '../api'
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
-  const [email, setEmail]             = useState('')
+  const [email, setEmail]             = useState(() => localStorage.getItem('meter_remembered_email') ?? '')
   const [password, setPassword]       = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading]         = useState(false)
@@ -27,6 +27,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
       if (refreshToken) localStorage.setItem('meter_refresh_token', refreshToken)
       const normalizedUser = { ...user, role: user.role.toLowerCase().replace(/\s+/g, '_') }
       localStorage.setItem('meter_user', JSON.stringify(normalizedUser))
+      localStorage.setItem('meter_remembered_email', email.trim())
       onLogin()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')

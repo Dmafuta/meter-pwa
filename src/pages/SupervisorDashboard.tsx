@@ -3,7 +3,7 @@ import {
   getReadingProgress, getReaderPerformance, getUnreadMeters, getAnomalyReadings, getTamperedReadings,
   getAssignmentSummary, getAvailableReaders, assignByBlock, clearByBlock,
   type ReadingProgress, type ReaderPerformance, type UnreadMeter, type ReadMeter,
-  type AssignmentPhase, type AvailableReader,
+  type AssignmentPhase, type AvailableReader, type AssignmentBlock,
 } from '../api'
 
 function formatPeriod(p: string): string {
@@ -45,18 +45,29 @@ export default function SupervisorDashboard({
   const prevUnreadRef = useRef<number | null>(null)
   const [prevProgress, setPrevProgress]   = useState<ReadingProgress | null>(null)
   const [anomalyReaderFilter, setAnomalyReaderFilter] = useState('all')
+  const [unreadSearch, setUnreadSearch]   = useState('')
+  const [tamperedSearch, setTamperedSearch] = useState('')
+  const [blockSummary, setBlockSummary]   = useState<AssignmentBlock[]>([])
 
   useEffect(() => {
     setLoading(true)
     setError('')
-    Promise.all([
+    Promise.allSettled([
       getReadingProgress(period),
       getReaderPerformance(period),
       getUnreadMeters(period),
       getAnomalyReadings(period),
       getTamperedReadings(period),
-      getReadingProgress(prevPeriod(period)).catch(() => null),
-    ]).then(([prog, perf, unread, anomalies, tampered, prev]) => {
+      getReadingProgress(prevPeriod(period)),
+      getAssignmentSummary(period),
+    ]).then(([progR, perfR, unreadR, anomaliesR, tamperedR, prevR, assignR]) => {
+      if (progR.status === 'rejected') {
+        const msg = (progR.reason as Error)?.message ?? 'Unknown error'
+        setError(`Failed to load data: ${msg}`)
+        setLoading(false)
+        return
+      }
+      const prog = progR.value
       // All-done toast: fire when unread transitions from > 0 → 0 on refresh
       if (prevUnreadRef.current !== null && prevUnreadRef.current > 0 && prog.total_unread === 0) {
         setShowDoneToast(true)
@@ -64,14 +75,15 @@ export default function SupervisorDashboard({
       }
       prevUnreadRef.current = prog.total_unread
       setProgress(prog)
-      setPerformance(perf)
-      setUnreadMeters(unread)
-      setAnomalyReadings(anomalies)
-      setTamperedReadings(tampered)
-      setPrevProgress(prev)
+      setPerformance(perfR.status === 'fulfilled' ? perfR.value : [])
+      setUnreadMeters(unreadR.status === 'fulfilled' ? unreadR.value : [])
+      setAnomalyReadings(anomaliesR.status === 'fulfilled' ? anomaliesR.value : [])
+      setTamperedReadings(tamperedR.status === 'fulfilled' ? tamperedR.value : [])
+      setPrevProgress(prevR.status === 'fulfilled' ? prevR.value : null)
+      if (assignR.status === 'fulfilled') {
+        setBlockSummary(assignR.value.flatMap(p => p.blocks))
+      }
       setLastRefreshed(new Date())
-    }).catch(() => {
-      setError('Failed to load supervisor data.')
     }).finally(() => setLoading(false))
   }, [period, refreshKey])
 
@@ -241,6 +253,36 @@ export default function SupervisorDashboard({
                   </div>
                 )}
 
+                {blockSummary.length > 0 && (
+                  <div className="bg-white rounded-2xl shadow-sm p-4">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Block Progress</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {blockSummary.map(block => {
+                        const pct = block.total_meters > 0 ? block.assigned_meters / block.total_meters : 0
+                        const isComplete = pct >= 1
+                        const hasStarted = pct > 0 && pct < 1
+                        return (
+                          <div
+                            key={block.block}
+                            className={`rounded-xl p-2 text-center ${
+                              isComplete ? 'bg-green-50' : hasStarted ? 'bg-yellow-50' : 'bg-gray-50'
+                            }`}
+                          >
+                            <p className={`text-sm font-bold ${
+                              isComplete ? 'text-green-700' : hasStarted ? 'text-yellow-700' : 'text-gray-400'
+                            }`}>
+                              {block.block}
+                            </p>
+                            <p className={`text-[10px] mt-0.5 ${isComplete ? 'text-green-600' : 'text-gray-400'}`}>
+                              {block.assigned_meters}/{block.total_meters}
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {performance.length > 0 && (
                   <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">Reader Performance</p>
@@ -270,38 +312,54 @@ export default function SupervisorDashboard({
                   <p className="font-semibold text-gray-900">All meters read!</p>
                   <p className="text-sm text-gray-500 mt-1">No unread meters for {formatPeriod(period)}</p>
                 </div>
-              ) : (
-                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                      {unreadMeters.length} meter{unreadMeters.length !== 1 ? 's' : ''} not yet read
-                    </p>
-                    <button
-                      onClick={() => exportUnreadCsv(unreadMeters, period)}
-                      className="text-indigo-600 active:text-indigo-800"
-                      title="Export CSV"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              ) : (() => {
+                const q = unreadSearch.trim().toLowerCase()
+                const filteredUnread = q
+                  ? unreadMeters.filter(m => m.unit_label.toLowerCase().includes(q) || m.meter_number.toLowerCase().includes(q))
+                  : unreadMeters
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 bg-white rounded-xl shadow-sm px-3 py-2">
+                      <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                       </svg>
-                    </button>
-                  </div>
-                  <div className="divide-y divide-gray-50">
-                    {unreadMeters.map(m => (
-                      <div key={m.id} className="flex items-center gap-3 px-4 py-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{m.unit_label}</p>
-                          <p className="text-xs text-gray-400">#{m.meter_number} · {m.utility_type.replace('_', ' ')}</p>
-                        </div>
-                        <span className="text-xs text-gray-400 shrink-0">
-                          Prev: {m.last_reading ?? '—'}
-                        </span>
+                      <input
+                        type="search"
+                        value={unreadSearch}
+                        onChange={e => setUnreadSearch(e.target.value)}
+                        placeholder="Search unit or meter…"
+                        className="flex-1 text-sm text-gray-900 placeholder-gray-400 focus:outline-none bg-transparent"
+                      />
+                    </div>
+                    <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-3">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                          {filteredUnread.length}{q ? ` of ${unreadMeters.length}` : ''} meter{filteredUnread.length !== 1 ? 's' : ''} not yet read
+                        </p>
+                        <button onClick={() => exportUnreadCsv(unreadMeters, period)} className="text-indigo-600 active:text-indigo-800" title="Export CSV">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                          </svg>
+                        </button>
                       </div>
-                    ))}
+                      <div className="divide-y divide-gray-50">
+                        {filteredUnread.map(m => (
+                          <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-900 truncate">{m.unit_label}</p>
+                              <p className="text-xs text-gray-400">#{m.meter_number} · {m.utility_type.replace('_', ' ')}</p>
+                            </div>
+                            <span className="text-xs text-gray-400 shrink-0">Prev: {m.last_reading ?? '—'}</span>
+                          </div>
+                        ))}
+                        {filteredUnread.length === 0 && (
+                          <p className="text-center text-sm text-gray-400 py-8">No results for "{unreadSearch}"</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )
+                )
+              })()
             )}
 
             {/* ── TAMPERED TAB ─────────────────────────────────────────────── */}
@@ -312,13 +370,38 @@ export default function SupervisorDashboard({
                   <p className="font-semibold text-gray-900">No tampered meters</p>
                   <p className="text-sm text-gray-500 mt-1">No tamper/fault flags for {formatPeriod(period)}</p>
                 </div>
-              ) : (
+              ) : (() => {
+                const qt = tamperedSearch.trim().toLowerCase()
+                const filteredTampered = qt
+                  ? tamperedReadings.filter(r => (r.unit_label ?? '').toLowerCase().includes(qt) || r.meter_number.toLowerCase().includes(qt))
+                  : tamperedReadings
+                return (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 flex items-center gap-2 bg-white rounded-xl shadow-sm px-3 py-2">
+                      <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <input
+                        type="search"
+                        value={tamperedSearch}
+                        onChange={e => setTamperedSearch(e.target.value)}
+                        placeholder="Search unit or meter…"
+                        className="flex-1 text-sm text-gray-900 placeholder-gray-400 focus:outline-none bg-transparent"
+                      />
+                    </div>
+                    <button onClick={() => exportAnomalyCsv(tamperedReadings, period)} className="text-indigo-600 active:text-indigo-800 shrink-0" title="Export CSV">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                      </svg>
+                    </button>
+                  </div>
                 <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">
-                    {tamperedReadings.length} tampered/fault reading{tamperedReadings.length !== 1 ? 's' : ''}
+                    {filteredTampered.length}{qt ? ` of ${tamperedReadings.length}` : ''} tampered/fault reading{filteredTampered.length !== 1 ? 's' : ''}
                   </p>
                   <div className="divide-y divide-gray-50">
-                    {tamperedReadings.map(r => (
+                    {filteredTampered.map(r => (
                       <div key={r.id} className="px-4 py-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -341,7 +424,9 @@ export default function SupervisorDashboard({
                     ))}
                   </div>
                 </div>
-              )
+                </div>
+                )
+              })()
             )}
 
             {/* ── ASSIGN TAB ───────────────────────────────────────────────── */}

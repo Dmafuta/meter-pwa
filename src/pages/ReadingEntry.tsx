@@ -42,16 +42,33 @@ function formatPeriodShort(p: string | null): string {
     .toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
 }
 
+function beep() {
+  try {
+    const ctx = new AudioContext()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
+    osc.frequency.value = 880; gain.gain.value = 0.08
+    osc.start()
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
+    osc.stop(ctx.currentTime + 0.15)
+  } catch { /* ignore — AudioContext may be blocked */ }
+}
+
 export default function ReadingEntry({
   meter,
   period,
   nextMeter,
+  meterIndex,
+  totalMeters,
   onSubmitted,
   onBack,
 }: {
   meter: UnreadMeter
   period: string
   nextMeter?: UnreadMeter | null
+  meterIndex?: number
+  totalMeters?: number
   onSubmitted: () => void
   onBack: () => void
 }) {
@@ -158,7 +175,10 @@ export default function ReadingEntry({
     reader.readAsDataURL(file)
   }
 
-  // ── Submit → open confirmation ───────────────────────────────────────────────
+  const skipConfirm = localStorage.getItem('pwa_skip_confirm') === '1'
+  const soundOn     = localStorage.getItem('pwa_sound') !== '0'  // on by default
+
+  // ── Submit → open confirmation (or skip if preference set) ──────────────────
   function handleSubmitClick(e: React.FormEvent) {
     e.preventDefault()
     if (isNaN(current)) { setError('Enter a valid reading'); return }
@@ -167,7 +187,12 @@ export default function ReadingEntry({
       return
     }
     setError('')
-    setShowConfirm(true)
+    // Skip confirm sheet for normal readings when user has opted in
+    if (skipConfirm && !isAnomaly) {
+      void confirmSubmit()
+    } else {
+      setShowConfirm(true)
+    }
   }
 
   // ── Actual submission ────────────────────────────────────────────────────────
@@ -180,6 +205,7 @@ export default function ReadingEntry({
       localStorage.removeItem(draftKey)
       setSuccess(true)
       navigator.vibrate?.(100)
+      if (soundOn) beep()
       setShowConfirm(false)
       setTimeout(doAdvance, 1200)
     } catch (err) {
@@ -196,6 +222,7 @@ export default function ReadingEntry({
         localStorage.removeItem(draftKey)
         setSuccess(true)
         navigator.vibrate?.(200)
+        if (soundOn) beep()
         setShowConfirm(false)
         setTimeout(doAdvance, 1200)
       } else {
@@ -325,12 +352,27 @@ export default function ReadingEntry({
 
       {/* ── Header ───────────────────────────────────────────────────────────── */}
       <div className="bg-green-600 text-white px-4 pt-12 pb-5">
-        <button onClick={onBack} className="flex items-center gap-1 text-green-200 text-sm mb-2 active:text-white">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to list
-        </button>
+        <div className="flex items-center justify-between mb-2">
+          <button onClick={onBack} className="flex items-center gap-1 text-green-200 text-sm active:text-white">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to list
+          </button>
+          {meterIndex !== undefined && totalMeters !== undefined && totalMeters > 0 && (
+            <span className="text-green-300 text-xs font-medium">
+              {meterIndex + 1} / {totalMeters}
+            </span>
+          )}
+        </div>
+        {meterIndex !== undefined && totalMeters !== undefined && totalMeters > 0 && (
+          <div className="w-full bg-white/20 rounded-full h-1 mb-3">
+            <div
+              className="bg-white rounded-full h-1 transition-all"
+              style={{ width: `${Math.round((meterIndex / totalMeters) * 100)}%` }}
+            />
+          </div>
+        )}
         <h1 className="text-2xl font-bold">{meter.unit_label}</h1>
         <p className="text-green-200 text-sm mt-0.5">
           #{meter.meter_number} · {formatPeriod(period)}

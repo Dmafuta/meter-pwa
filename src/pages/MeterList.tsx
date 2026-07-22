@@ -69,6 +69,8 @@ export default function MeterList({
   const [pullProgress, setPullProgress]   = useState(0)
   const [lastSynced, setLastSynced]       = useState<Date | null>(null)
   const [highContrast, setHighContrast]   = useState(() => localStorage.getItem('pwa_hc') === '1')
+  const [soundOn, setSoundOn]             = useState(() => localStorage.getItem('pwa_sound') !== '0')
+  const [skipConfirm, setSkipConfirm]     = useState(() => localStorage.getItem('pwa_skip_confirm') === '1')
   const [isOnline, setIsOnline]           = useState(() => navigator.onLine)
   const completedAt                       = useRef<number | null>(null)
   const touchStartY                       = useRef(0)
@@ -262,6 +264,22 @@ export default function MeterList({
               View Supervisor Dashboard
             </button>
           )}
+
+          {'share' in navigator && (
+            <button
+              onClick={() => void (navigator as Navigator & { share(d: object): Promise<void> }).share({
+                title: `Meter readings — ${formatPeriod(period)}`,
+                text: `Completed ${readMeters.length} meter reading${readMeters.length !== 1 ? 's' : ''} for ${formatPeriod(period)} in ${duration}.`,
+              })}
+              className="mt-3 w-full max-w-xs bg-gray-100 text-gray-700 rounded-2xl py-3.5 font-semibold text-sm active:bg-gray-200 flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+              Share summary
+            </button>
+          )}
         </div>
       </div>
     )
@@ -273,6 +291,16 @@ export default function MeterList({
     const next = !highContrast
     setHighContrast(next)
     localStorage.setItem('pwa_hc', next ? '1' : '0')
+  }
+  function toggleSound() {
+    const next = !soundOn
+    setSoundOn(next)
+    localStorage.setItem('pwa_sound', next ? '1' : '0')
+  }
+  function toggleSkipConfirm() {
+    const next = !skipConfirm
+    setSkipConfirm(next)
+    localStorage.setItem('pwa_skip_confirm', next ? '1' : '0')
   }
 
   // ── Normal list ──────────────────────────────────────────────────────────────
@@ -324,6 +352,16 @@ export default function MeterList({
             {lastSynced && !loading && (
               <span className="text-green-300 text-xs">Synced {formatSynced(lastSynced)}</span>
             )}
+            <button
+              onClick={toggleSound}
+              className={`text-xs px-1.5 py-0.5 rounded border ${soundOn ? 'border-white text-white bg-white/20' : 'border-green-400/60 text-green-300'}`}
+              title={soundOn ? 'Sound on' : 'Sound off'}
+            >🔔</button>
+            <button
+              onClick={toggleSkipConfirm}
+              className={`text-xs px-1.5 py-0.5 rounded border ${skipConfirm ? 'border-white text-white bg-white/20' : 'border-green-400/60 text-green-300'}`}
+              title={skipConfirm ? 'Skip confirm: on' : 'Skip confirm: off'}
+            >⚡</button>
             <button
               onClick={toggleHC}
               className={`text-xs font-bold px-1.5 py-0.5 rounded border ${highContrast ? 'border-white text-white bg-white/20' : 'border-green-400/60 text-green-300'}`}
@@ -470,8 +508,19 @@ export default function MeterList({
           </div>
         )}
         {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-xl shadow-sm p-4 flex items-center gap-3 animate-pulse">
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 bg-gray-200 rounded w-2/3" />
+                    <div className="h-4 bg-gray-100 rounded w-12" />
+                  </div>
+                  <div className="h-3 bg-gray-100 rounded w-1/2" />
+                </div>
+                <div className="w-5 h-5 bg-gray-100 rounded-full" />
+              </div>
+            ))}
           </div>
         ) : error ? (
           <div className="text-center py-12">

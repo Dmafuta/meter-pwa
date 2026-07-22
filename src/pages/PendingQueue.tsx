@@ -127,6 +127,7 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
               const hasFailed = (item.failCount ?? 0) > 0
               const isStuck   = (item.failCount ?? 0) >= MAX_RETRIES
 
+              const isStale = Date.now() - item.queuedAt > 48 * 3600 * 1000
               return (
                 <div
                   key={item.id}
@@ -146,6 +147,11 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
                         {item.tampered && <span className="ml-2 text-xs text-red-600 font-semibold">Tampered</span>}
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">Queued {formatDate(item.queuedAt)}</p>
+                      {isStale && (
+                        <p className="text-xs font-semibold text-orange-600 mt-0.5">
+                          ⚠ {Math.floor((Date.now() - item.queuedAt) / 3600000)}h old — sync soon
+                        </p>
+                      )}
                       {hasFailed && (
                         <div className="mt-1">
                           <p className={`text-xs font-semibold ${isStuck ? 'text-red-600' : 'text-orange-500'}`}>
