@@ -6,6 +6,28 @@ function formatDate(ts: number) {
   return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+function exportQueueCsv(items: import('../db').PendingReading[]) {
+  const header = 'Unit,Meter #,Period,Reading,Tampered,Notes,Queued At,Fail Count,Last Error'
+  const rows = items.map(i => [
+    `"${i.unitLabel}"`,
+    i.meterNumber,
+    i.billingPeriod,
+    i.currentValue,
+    i.tampered ? 'Yes' : 'No',
+    `"${(i.notes ?? '').replace(/"/g, '""')}"`,
+    new Date(i.queuedAt).toISOString(),
+    i.failCount,
+    `"${(i.lastError ?? '').replace(/"/g, '""')}"`,
+  ].join(','))
+  const csv = [header, ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `queued-readings-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 export default function PendingQueue({ onBack }: { onBack: () => void }) {
   const [items, setItems]       = useState<PendingReading[]>([])
   const [syncing, setSyncing]   = useState(false)
@@ -92,6 +114,15 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {items.length > 0 && (
+              <button
+                onClick={() => exportQueueCsv(items)}
+                className="text-xs font-semibold bg-white/15 text-white px-2.5 py-1.5 rounded-lg"
+                title="Export as CSV"
+              >
+                Export
+              </button>
+            )}
             {failed.length > 0 && !syncing && navigator.onLine && (
               <button
                 onClick={() => void retryAllFailed()}

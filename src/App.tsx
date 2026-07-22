@@ -10,7 +10,7 @@ import OfflineBanner from './components/OfflineBanner'
 import InstallPrompt from './components/InstallPrompt'
 import UpdateBanner from './components/UpdateBanner'
 import InactivityLock from './components/InactivityLock'
-import { getActivePeriod } from './api'
+import { getActivePeriod, sendHeartbeat } from './api'
 import type { UnreadMeter } from './api'
 import { countPending } from './db'
 import { syncPending } from './sync'
@@ -92,6 +92,16 @@ export default function App() {
     window.addEventListener('meter:auth-expired', handler)
     return () => window.removeEventListener('meter:auth-expired', handler)
   }, [])
+
+  // Device heartbeat — send every 15 min while authenticated
+  useEffect(() => {
+    if (page === 'login') return
+    void sendHeartbeat().catch(() => {})
+    const id = setInterval(() => {
+      if (!document.hidden) void sendHeartbeat().catch(() => {})
+    }, 15 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [page])
 
   async function logout() {
     const pending = await countPending()

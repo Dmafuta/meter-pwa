@@ -349,3 +349,53 @@ export function clearByBlock(period: string, block: string): Promise<{ cleared: 
 export function checkMeterNumber(number: string): Promise<{ exists: boolean }> {
   return apiFetch(`/meters/check?number=${encodeURIComponent(number)}`)
 }
+
+// ── Device heartbeat ───────────────────────────────────────────────────────────
+
+export async function sendHeartbeat(): Promise<void> {
+  let deviceId = localStorage.getItem('meter_device_id')
+  if (!deviceId) {
+    deviceId = crypto.randomUUID()
+    localStorage.setItem('meter_device_id', deviceId)
+  }
+  const user = (() => { try { return JSON.parse(localStorage.getItem('meter_user') ?? '{}') } catch { return {} } })()
+
+  const payload: Record<string, unknown> = {
+    device_id:   deviceId,
+    device_name: navigator.userAgent.slice(0, 200),
+    user_id:     user.id,
+    user_name:   user.fullName,
+  }
+
+  // Battery API — best effort
+  try {
+    const nav = navigator as Navigator & { getBattery?(): Promise<{ level: number }> }
+    const battery = await nav.getBattery?.()
+    if (battery) payload.battery_level = Math.round(battery.level * 100)
+  } catch { /* not supported */ }
+
+  await apiFetch('/devices/heartbeat', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+// ── AMR ingest (for admin/tooling; devices use the API-key endpoint directly) ──
+
+export function ingestAmrReading(
+  apiKey: string,
+  meterId: string,
+  currentValue: number,
+  billingPeriod: string,
+  readingDate?: string,
+  notes?: string,
+): Promise<unknown> {
+  return fetch((import.meta.env.VITE_API_URL ?? '') + '/api/meters/readings/ingest', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'X-AMR-Api-Key': apiKey },
+    body: JSON.stringify({
+      meter_id:       meterId,
+      current_value:  currentValue,
+      billing_period: billingPeriod,
+      ...(readingDate ? { reading_date: readingDate } : {}),
+      ...(notes       ? { notes }                    : {}),
+    }),
+  }).then(r => r.json())
+}

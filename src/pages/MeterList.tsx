@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getUnreadMeters, getReadMeters, getMyAssignments, submitReading, type UnreadMeter, type ReadMeter } from '../api'
-import { countPending, queueReading } from '../db'
+import { countPending, queueReading, saveMeterCache, loadMeterCache } from '../db'
 import { syncPendingWithProgress } from '../sync'
 
 const UTILITY_BADGE: Record<string, string> = {
@@ -82,6 +82,11 @@ export default function MeterList({
   const bodyRef                           = useRef<HTMLDivElement>(null)
   const longPressRef                      = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Smart meter inspect modal
+  const [smartTarget, setSmartTarget] = useState<UnreadMeter | null>(null)
+  const [smartNotes, setSmartNotes]   = useState('')
+  const [smartSeal, setSmartSeal]     = useState(true)
+
   // Long-press → quick inaccessible
   const [inaccessibleTarget, setInaccessibleTarget]   = useState<UnreadMeter | null>(null)
   const [inaccessibleLoading, setInaccessibleLoading] = useState(false)
@@ -127,6 +132,16 @@ export default function MeterList({
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
 
+  // Hydrate from cache immediately — before the network fetch arrives
+  useEffect(() => {
+    loadMeterCache(period).then(cached => {
+      if (cached && cached.meters.length > 0) {
+        setMeters(cached.meters as UnreadMeter[])
+        setLoading(false)
+      }
+    }).catch(() => {})
+  }, [period])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -137,18 +152,21 @@ export default function MeterList({
         getMyAssignments(period).catch(() => []),
       ])
       setReadMeters(read)
+      let displayMeters: UnreadMeter[]
       if (assigned.length > 0) {
         // Reorder unread meters to match assignment sort order; show only assigned ones
         const orderMap = new Map(assigned.map(a => [a.meter_number, a.sort_order]))
-        const assignedUnread = unread
+        displayMeters = unread
           .filter(m => orderMap.has(m.meter_number))
           .sort((a, b) => (orderMap.get(a.meter_number) ?? 999) - (orderMap.get(b.meter_number) ?? 999))
-        setMeters(assignedUnread)
         setHasAssignments(true)
       } else {
-        setMeters(unread)
+        displayMeters = unread
         setHasAssignments(false)
       }
+      setMeters(displayMeters)
+      // Persist to cache for offline use
+      void saveMeterCache(period, displayMeters)
       // Record when all meters were first completed
       if (unread.length === 0 && completedAt.current === null) {
         completedAt.current = Date.now()
@@ -158,6 +176,7 @@ export default function MeterList({
       const status = (e as { status?: number }).status
       if (status === 403)      setError('No permission to view meters. Contact your administrator.')
       else if (status === 401) setError('Session expired. Please sign in again.')
+      else if (!navigator.onLine) { /* keep showing cached data silently */ }
       else                     setError('Could not load meters. Check your connection and try again.')
     } finally {
       setLoading(false)
@@ -375,6 +394,71 @@ export default function MeterList({
                 className="flex-1 bg-orange-500 text-white rounded-2xl py-3 font-semibold disabled:opacity-50"
               >
                 {inaccessibleLoading ? 'Saving…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Smart meter inspect bottom sheet */}
+      {smartTarget && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end">
+          <div className="bg-white rounded-t-3xl w-full p-5 pb-8 space-y-4">
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto" />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">Smart / AMR</span>
+              <h2 className="text-lg font-bold text-gray-900">Field Inspection</h2>
+            </div>
+            <p className="text-sm text-gray-500">{smartTarget.unit_label} · #{smartTarget.meter_number}</p>
+
+            <div className="bg-indigo-50 rounded-xl px-4 py-3">
+              <p className="text-xs text-indigo-600 font-medium">Last transmitted reading</p>
+              <p className="text-2xl font-bold text-indigo-800 mt-0.5">{smartTarget.last_reading ?? '—'}</p>
+              <p className="text-xs text-indigo-500 mt-0.5">
+                {smartTarget.last_reading_date
+                  ? new Date(smartTarget.last_reading_date).toLocaleDateString()
+                  : 'No previous reading'}
+              </p>
+            </div>
+
+            <label className="flex items-center gap-3 py-1">
+              <input
+                type="checkbox"
+                checked={smartSeal}
+                onChange={e => setSmartSeal(e.target.checked)}
+                className="w-5 h-5 accent-green-600"
+              />
+              <span className="text-sm font-medium text-gray-700">Seal / tamper indicator intact</span>
+            </label>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Notes (optional)</label>
+              <textarea
+                value={smartNotes}
+                onChange={e => setSmartNotes(e.target.value)}
+                placeholder="Any observations about the meter…"
+                rows={2}
+                className="w-full text-sm text-gray-900 border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setSmartTarget(null)}
+                className="flex-1 border-2 border-gray-200 text-gray-700 rounded-2xl py-3 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const m = smartTarget
+                  setSmartTarget(null)
+                  // Proceed to ReadingEntry with smart meter context
+                  onMeterSelect(m, filtered.filter(x => x.meter_type === 'smart'), 0)
+                }}
+                className="flex-1 bg-indigo-600 text-white rounded-2xl py-3 font-semibold active:bg-indigo-700"
+              >
+                Proceed to confirm
               </button>
             </div>
           </div>
@@ -609,14 +693,18 @@ export default function MeterList({
               filtered.slice(0, visibleCount).map((m, idx) => {
                 const days = daysSince(m.last_reading_date)
                 const isOverdue = days !== null && days > 35
+                const isSmart = m.meter_type === 'smart'
                 return (
                   <button
                     key={m.id}
-                    onClick={() => onMeterSelect(m, filtered, idx)}
-                    onTouchStart={() => startLongPress(m)}
+                    onClick={() => {
+                      if (isSmart) { setSmartTarget(m); setSmartNotes(''); setSmartSeal(true) }
+                      else         { onMeterSelect(m, filtered, idx) }
+                    }}
+                    onTouchStart={() => { if (!isSmart) startLongPress(m) }}
                     onTouchEnd={cancelLongPress}
                     onTouchMove={cancelLongPress}
-                    onMouseDown={() => startLongPress(m)}
+                    onMouseDown={() => { if (!isSmart) startLongPress(m) }}
                     onMouseUp={cancelLongPress}
                     onMouseLeave={cancelLongPress}
                     className="w-full bg-white rounded-xl shadow-sm p-4 text-left active:bg-gray-50 flex items-center gap-3 select-none"
@@ -627,6 +715,9 @@ export default function MeterList({
                         <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${UTILITY_BADGE[m.utility_type] ?? 'bg-gray-100 text-gray-600'}`}>
                           {m.utility_type.replace('_', ' ')}
                         </span>
+                        {isSmart && (
+                          <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">Smart</span>
+                        )}
                         {m.last_reading_source === 'estimated' && (
                           <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Est.</span>
                         )}
@@ -641,6 +732,9 @@ export default function MeterList({
                           </span>
                         )}
                       </div>
+                      {isSmart && (
+                        <p className="text-[10px] text-indigo-500 mt-0.5">Auto-read · tap to inspect</p>
+                      )}
                     </div>
                     <svg className="w-5 h-5 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

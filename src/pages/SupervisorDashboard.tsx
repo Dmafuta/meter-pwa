@@ -29,7 +29,7 @@ export default function SupervisorDashboard({
   onGoToList: () => void
   onLogout: () => void
 }) {
-  type DashTab = 'overview' | 'unread' | 'anomalies' | 'tampered' | 'assign'
+  type DashTab = 'overview' | 'unread' | 'smart' | 'anomalies' | 'tampered' | 'assign'
 
   const [tab, setTab]                   = useState<DashTab>('overview')
   const [progress, setProgress]         = useState<ReadingProgress | null>(null)
@@ -157,6 +157,7 @@ export default function SupervisorDashboard({
         {([
           { key: 'overview',  label: 'Overview' },
           { key: 'unread',    label: `Unread${!loading && progress ? ` (${progress.total_unread})` : ''}` },
+          { key: 'smart',     label: `Smart${!loading && unreadMeters.filter(m => m.meter_type === 'smart').length > 0 ? ` (${unreadMeters.filter(m => m.meter_type === 'smart').length})` : ''}` },
           { key: 'anomalies', label: `Anom.${!loading && anomalyReadings.length > 0 ? ` (${anomalyReadings.length})` : ''}` },
           { key: 'tampered',  label: `Tampered${!loading && tamperedReadings.length > 0 ? ` (${tamperedReadings.length})` : ''}` },
           { key: 'assign',    label: 'Assign' },
@@ -368,6 +369,49 @@ export default function SupervisorDashboard({
                 )
               })()
             )}
+
+            {/* ── SMART METERS TAB ─────────────────────────────────────────── */}
+            {tab === 'smart' && (() => {
+              const smartMeters = unreadMeters.filter(m => m.meter_type === 'smart')
+              if (smartMeters.length === 0) return (
+                <div className="text-center py-16">
+                  <div className="text-5xl mb-3">📡</div>
+                  <p className="font-semibold text-gray-900">No smart meters pending</p>
+                  <p className="text-sm text-gray-500 mt-1">All AMR/smart meters have readings for {formatPeriod(period)}</p>
+                </div>
+              )
+              return (
+                <div className="space-y-3">
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-indigo-700">
+                      {smartMeters.length} smart meter{smartMeters.length !== 1 ? 's' : ''} awaiting AMR transmission or field inspection
+                    </p>
+                    <p className="text-xs text-indigo-500 mt-0.5">
+                      These meters should auto-report via AMR. If overdue, a field visit may be required.
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                    <div className="divide-y divide-gray-50">
+                      {smartMeters.map(m => (
+                        <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-gray-900 truncate">{m.unit_label}</p>
+                              <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">Smart</span>
+                            </div>
+                            <p className="text-xs text-gray-400">#{m.meter_number} · {m.utility_type.replace('_', ' ')}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs text-gray-500">Prev: {m.last_reading ?? '—'}</p>
+                            <p className="text-xs text-gray-400">{m.last_reading_date ?? 'Never read'}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* ── TAMPERED TAB ─────────────────────────────────────────────── */}
             {tab === 'tampered' && (

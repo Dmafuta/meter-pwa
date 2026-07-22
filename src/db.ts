@@ -1,7 +1,8 @@
 import { openDB } from 'idb'
 
-const DB_NAME = 'meter-pwa'
-const STORE = 'pending'
+const DB_NAME    = 'meter-pwa'
+const STORE      = 'pending'
+const CACHE_STORE = 'meter-cache'
 
 export interface PendingReading {
   id?: number
@@ -23,13 +24,17 @@ export interface PendingReading {
 
 function openDb() {
   try {
-    return openDB(DB_NAME, 3, {
+    return openDB(DB_NAME, 4, {
       upgrade(d, oldVersion) {
         if (oldVersion < 1) {
           d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true })
         }
         // v2: adds failCount, lastError, photoBase64 — no schema change needed
         // v3: adds notes, latitude, longitude — no schema change needed
+        if (oldVersion < 4) {
+          if (!d.objectStoreNames.contains(CACHE_STORE))
+            d.createObjectStore(CACHE_STORE) // keyed by period string
+        }
       }
     }).catch(err => {
       console.warn('[meter-pwa] IndexedDB unavailable — offline queue disabled:', err)
@@ -88,6 +93,21 @@ export async function resetFailed(id: number): Promise<void> {
   if (item) {
     await store.put(STORE, { ...item, failCount: 0, lastError: undefined })
   }
+}
+
+// ── Meter list cache (offline support) ────────────────────────────────────────
+
+export async function saveMeterCache(period: string, meters: unknown[]): Promise<void> {
+  const store = await db
+  if (!store) return
+  await store.put(CACHE_STORE, { meters, timestamp: Date.now() }, period)
+}
+
+export async function loadMeterCache(period: string): Promise<{ meters: unknown[]; timestamp: number } | null> {
+  const store = await db
+  if (!store) return null
+  return (store.get(CACHE_STORE, period) as Promise<{ meters: unknown[]; timestamp: number } | undefined>)
+    .then(v => v ?? null)
 }
 
 export async function resetAllFailed(): Promise<void> {

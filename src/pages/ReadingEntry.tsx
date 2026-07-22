@@ -440,11 +440,19 @@ export default function ReadingEntry({
             />
           </div>
         )}
-        <h1 className="text-2xl font-bold">{meter.unit_label}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold">{meter.unit_label}</h1>
+          {meter.meter_type === 'smart' && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-white/20 text-white">Smart</span>
+          )}
+        </div>
         <p className="text-green-200 text-sm mt-0.5">
           #{meter.meter_number} · {formatPeriod(period)}
           {gps && <span className="ml-2 text-green-300">· GPS ✓{gps.accuracy ? ` ±${Math.round(gps.accuracy)}m` : ''}</span>}
         </p>
+        {meter.meter_type === 'smart' && (
+          <p className="text-green-300 text-xs mt-0.5">AMR / Auto-read meter — confirm display value</p>
+        )}
       </div>
 
       <div className="flex-1 px-4 py-5 space-y-4 pb-10">
@@ -494,6 +502,7 @@ export default function ReadingEntry({
                 step={isDecimalMeter ? '0.001' : '1'}
                 value={currentValue}
                 onChange={e => { setCurrentValue(e.target.value); setError('') }}
+                aria-label="Current meter reading"
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-4 text-3xl font-bold text-center text-gray-900 focus:outline-none focus:border-green-500 transition-colors"
                 placeholder={isDecimalMeter ? '0.000' : '0'}
                 required
