@@ -2,6 +2,16 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { submitReading, getReadingHistory, type UnreadMeter, type MeterReadingHistory } from '../api'
 import { queueReading } from '../db'
 
+// ── Quick-pick note templates ─────────────────────────────────────────────────
+const NOTE_TEMPLATES = [
+  'Meter damaged',
+  'No access – gate locked',
+  'Reading unclear',
+  'Suspected leak',
+  'Seal broken',
+  'Dog on premises',
+]
+
 // ── Photo compression ─────────────────────────────────────────────────────────
 async function compressPhoto(dataUrl: string): Promise<string> {
   return new Promise(resolve => {
@@ -67,7 +77,16 @@ export default function ReadingEntry({
   const [history, setHistory]               = useState<MeterReadingHistory[]>([])
   const [showHistory, setShowHistory]       = useState(false)
   const [storageWarning, setStorageWarning] = useState(false)
-  const photoInputRef = useRef<HTMLInputElement>(null)
+  const photoInputRef   = useRef<HTMLInputElement>(null)
+  const advancedRef     = useRef(false)
+  const touchStartXRef  = useRef(0)
+
+  // Call-once wrapper so swipe and the scheduled timeout don't both fire
+  function doAdvance() {
+    if (advancedRef.current) return
+    advancedRef.current = true
+    onSubmitted()
+  }
 
   // Save draft whenever fields change
   useEffect(() => {
@@ -162,7 +181,7 @@ export default function ReadingEntry({
       setSuccess(true)
       navigator.vibrate?.(100)
       setShowConfirm(false)
-      setTimeout(onSubmitted, 1200)
+      setTimeout(doAdvance, 1200)
     } catch (err) {
       const isOffline = !navigator.onLine || String(err).includes('Failed to fetch')
       if (isOffline) {
@@ -178,7 +197,7 @@ export default function ReadingEntry({
         setSuccess(true)
         navigator.vibrate?.(200)
         setShowConfirm(false)
-        setTimeout(onSubmitted, 1200)
+        setTimeout(doAdvance, 1200)
       } else {
         setError(err instanceof Error ? err.message : 'Failed to submit reading')
         setShowConfirm(false)
@@ -198,7 +217,7 @@ export default function ReadingEntry({
       await submitReading(meter.id, value, period, undefined, inaccessibleNote, gps?.lat, gps?.lng)
       setSuccess(true)
       navigator.vibrate?.(100)
-      setTimeout(onSubmitted, 1200)
+      setTimeout(doAdvance, 1200)
     } catch (err) {
       const isOffline = !navigator.onLine || String(err).includes('Failed to fetch')
       if (isOffline) {
@@ -209,7 +228,7 @@ export default function ReadingEntry({
         })
         setSuccess(true)
         navigator.vibrate?.(200)
-        setTimeout(onSubmitted, 1200)
+        setTimeout(doAdvance, 1200)
       } else {
         setError(err instanceof Error ? err.message : 'Failed to submit')
       }
@@ -219,7 +238,15 @@ export default function ReadingEntry({
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div
+      className="flex flex-col min-h-screen bg-gray-50"
+      onTouchStart={e => { touchStartXRef.current = e.touches[0].clientX }}
+      onTouchEnd={e => {
+        if (!success || !nextMeter) return
+        const dx = touchStartXRef.current - e.changedTouches[0].clientX
+        if (dx > 60) doAdvance()
+      }}
+    >
 
       {/* ── Confirmation overlay ──────────────────────────────────────────────── */}
       {showConfirm && (
@@ -456,6 +483,18 @@ export default function ReadingEntry({
           {showNotes ? (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Note</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {NOTE_TEMPLATES.map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setNotes(n => n ? `${n}; ${t}` : t)}
+                    className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full active:bg-gray-200 shrink-0"
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}

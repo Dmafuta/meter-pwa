@@ -64,6 +64,7 @@ export default function MeterList({
   const [pullProgress, setPullProgress]   = useState(0)
   const [lastSynced, setLastSynced]       = useState<Date | null>(null)
   const [highContrast, setHighContrast]   = useState(() => localStorage.getItem('pwa_hc') === '1')
+  const [isOnline, setIsOnline]           = useState(() => navigator.onLine)
   const completedAt                       = useRef<number | null>(null)
   const touchStartY                       = useRef(0)
   const bodyRef                           = useRef<HTMLDivElement>(null)
@@ -75,6 +76,15 @@ export default function MeterList({
     }, 1000)
     return () => clearInterval(interval)
   }, [sessionStart])
+
+  // Online/offline tracking
+  useEffect(() => {
+    const on  = () => setIsOnline(true)
+    const off = () => setIsOnline(false)
+    window.addEventListener('online',  on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -364,6 +374,18 @@ export default function MeterList({
               {type === 'all' ? 'All' : type.replace('_', ' ')}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Offline stale-data banner */}
+      {!isOnline && lastSynced && (
+        <div className="bg-orange-50 border-b border-orange-100 px-4 py-2 flex items-center gap-2">
+          <svg className="w-4 h-4 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-xs text-orange-700 font-medium">
+            Offline — showing list from {formatSynced(lastSynced)}
+          </p>
         </div>
       )}
 

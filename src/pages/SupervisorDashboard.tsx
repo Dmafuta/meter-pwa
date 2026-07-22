@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  getReadingProgress, getReaderPerformance, getUnreadMeters, getAnomalyReadings,
+  getReadingProgress, getReaderPerformance, getUnreadMeters, getAnomalyReadings, getTamperedReadings,
   getAssignmentSummary, getAvailableReaders, assignByBlock, clearByBlock,
   type ReadingProgress, type ReaderPerformance, type UnreadMeter, type ReadMeter,
   type AssignmentPhase, type AvailableReader,
@@ -23,17 +23,20 @@ export default function SupervisorDashboard({
   onGoToList: () => void
   onLogout: () => void
 }) {
-  type DashTab = 'overview' | 'unread' | 'anomalies' | 'assign'
+  type DashTab = 'overview' | 'unread' | 'anomalies' | 'tampered' | 'assign'
 
   const [tab, setTab]                   = useState<DashTab>('overview')
   const [progress, setProgress]         = useState<ReadingProgress | null>(null)
   const [performance, setPerformance]   = useState<ReaderPerformance[]>([])
   const [unreadMeters, setUnreadMeters] = useState<UnreadMeter[]>([])
-  const [anomalyReadings, setAnomalyReadings] = useState<ReadMeter[]>([])
+  const [anomalyReadings, setAnomalyReadings]   = useState<ReadMeter[]>([])
+  const [tamperedReadings, setTamperedReadings] = useState<ReadMeter[]>([])
   const [loading, setLoading]           = useState(true)
   const [error, setError]               = useState('')
   const [refreshKey, setRefreshKey]     = useState(0)
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const [showDoneToast, setShowDoneToast] = useState(false)
+  const prevUnreadRef = useRef<number | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -43,11 +46,19 @@ export default function SupervisorDashboard({
       getReaderPerformance(period),
       getUnreadMeters(period),
       getAnomalyReadings(period),
-    ]).then(([prog, perf, unread, anomalies]) => {
+      getTamperedReadings(period),
+    ]).then(([prog, perf, unread, anomalies, tampered]) => {
+      // All-done toast: fire when unread transitions from > 0 → 0 on refresh
+      if (prevUnreadRef.current !== null && prevUnreadRef.current > 0 && prog.total_unread === 0) {
+        setShowDoneToast(true)
+        setTimeout(() => setShowDoneToast(false), 4000)
+      }
+      prevUnreadRef.current = prog.total_unread
       setProgress(prog)
       setPerformance(perf)
       setUnreadMeters(unread)
       setAnomalyReadings(anomalies)
+      setTamperedReadings(tampered)
       setLastRefreshed(new Date())
     }).catch(() => {
       setError('Failed to load supervisor data.')
@@ -64,6 +75,24 @@ export default function SupervisorDashboard({
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
+
+      {/* All-done toast */}
+      {showDoneToast && (
+        <div className="fixed bottom-6 left-4 right-4 z-50 bg-green-600 text-white rounded-2xl px-5 py-4 shadow-xl flex items-center gap-3">
+          <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm">All meters read!</p>
+            <p className="text-xs text-green-200 mt-0.5">{formatPeriod(period)} is complete</p>
+          </div>
+          <button onClick={() => setShowDoneToast(false)} className="text-green-300 shrink-0">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="bg-indigo-700 text-white px-4 pt-12 pb-5">
@@ -106,13 +135,14 @@ export default function SupervisorDashboard({
         {([
           { key: 'overview',  label: 'Overview' },
           { key: 'unread',    label: `Unread${!loading && progress ? ` (${progress.total_unread})` : ''}` },
-          { key: 'anomalies', label: `Anomalies${!loading && anomalyReadings.length > 0 ? ` (${anomalyReadings.length})` : ''}` },
+          { key: 'anomalies', label: `Anom.${!loading && anomalyReadings.length > 0 ? ` (${anomalyReadings.length})` : ''}` },
+          { key: 'tampered',  label: `Tampered${!loading && tamperedReadings.length > 0 ? ` (${tamperedReadings.length})` : ''}` },
           { key: 'assign',    label: 'Assign' },
         ] as { key: DashTab; label: string }[]).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${
+            className={`flex-1 py-3 text-xs font-semibold border-b-2 transition-colors ${
               tab === t.key ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400'
             }`}
           >
@@ -154,7 +184,9 @@ export default function SupervisorDashboard({
                         </button>
                       )}
                       {progress.tampered_count > 0 && (
-                        <AlertBadge label={`${progress.tampered_count} tampered`} color="red" />
+                        <button onClick={() => setTab('tampered')}>
+                          <AlertBadge label={`${progress.tampered_count} tampered ›`} color="red" />
+                        </button>
                       )}
                     </div>
                   )}
@@ -164,12 +196,25 @@ export default function SupervisorDashboard({
                   <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">By Reader</p>
                     <div className="divide-y divide-gray-50">
-                      {progress.by_reader.map(r => (
-                        <div key={r.reader_name} className="flex items-center justify-between px-4 py-3">
-                          <span className="text-sm font-medium text-gray-700">{r.reader_name}</span>
-                          <span className="text-sm font-bold text-indigo-600">{r.read_count} read</span>
-                        </div>
-                      ))}
+                      {progress.by_reader.map(r => {
+                        const pct = progress.total_active_meters > 0
+                          ? Math.round((r.read_count / progress.total_active_meters) * 100)
+                          : 0
+                        return (
+                          <div key={r.reader_name} className="px-4 py-3">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-sm font-medium text-gray-700">{r.reader_name}</span>
+                              <span className="text-sm font-bold text-indigo-600">{r.read_count} read</span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-1.5">
+                              <div
+                                className="bg-indigo-500 h-1.5 rounded-full transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
@@ -230,6 +275,46 @@ export default function SupervisorDashboard({
                         <span className="text-xs text-gray-400 shrink-0">
                           Prev: {m.last_reading ?? '—'}
                         </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* ── TAMPERED TAB ─────────────────────────────────────────────── */}
+            {tab === 'tampered' && (
+              tamperedReadings.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="text-5xl mb-3">✓</div>
+                  <p className="font-semibold text-gray-900">No tampered meters</p>
+                  <p className="text-sm text-gray-500 mt-1">No tamper/fault flags for {formatPeriod(period)}</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">
+                    {tamperedReadings.length} tampered/fault reading{tamperedReadings.length !== 1 ? 's' : ''}
+                  </p>
+                  <div className="divide-y divide-gray-50">
+                    {tamperedReadings.map(r => (
+                      <div key={r.id} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{r.unit_label ?? '—'}</p>
+                            <p className="text-xs text-gray-400">#{r.meter_number} · {r.read_by ?? 'Unknown reader'}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-bold text-red-600">{Number(r.current_value).toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">{r.reading_date ?? '—'}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5 mt-1.5">
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700">Tampered/Fault</span>
+                          {r.anomaly && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">⚠ High consumption</span>}
+                        </div>
+                        {r.notes && (
+                          <p className="text-xs text-gray-400 mt-1 truncate">{r.notes}</p>
+                        )}
                       </div>
                     ))}
                   </div>

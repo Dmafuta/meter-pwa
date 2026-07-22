@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import QRCode from 'qrcode'
 import { listUnits, registerMeter, checkMeterNumber, type UnitSummary } from '../api'
 
 const UTILITY_TYPES = [
@@ -37,6 +38,8 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
   const [error, setError]             = useState('')
   const [success, setSuccess]         = useState(false)
   const [savedMeterNumber, setSavedMeterNumber] = useState('')
+  const [gps, setGps]                 = useState<{ lat: number; lng: number } | null>(null)
+  const [qrDataUrl, setQrDataUrl]     = useState<string | null>(null)
 
   // Barcode scan
   const [scanning, setScanning]       = useState(false)
@@ -52,6 +55,25 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
   const checkTimerRef                   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isConsumer = meterRole === 'consumer'
+
+  // GPS capture on mount
+  useEffect(() => {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      pos => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { timeout: 8000, maximumAge: 60000 }
+    )
+  }, [])
+
+  // QR code generation after successful registration
+  useEffect(() => {
+    if (success && savedMeterNumber) {
+      QRCode.toDataURL(savedMeterNumber, { width: 192, margin: 1 })
+        .then(setQrDataUrl)
+        .catch(() => {})
+    }
+  }, [success, savedMeterNumber])
 
   useEffect(() => {
     if (!isConsumer) { setUnits([]); return }
@@ -167,6 +189,8 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
 
     setSaving(true); setError('')
     try {
+      const gpsTag     = gps ? `[GPS: ${gps.lat.toFixed(6)}, ${gps.lng.toFixed(6)}]` : null
+      const finalNotes = [notes.trim(), gpsTag].filter(Boolean).join(' ') || undefined
       const result = await registerMeter({
         meterNumber:     meterNumber.trim(),
         utilityType,
@@ -177,7 +201,7 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
         lastReading:     lastReading !== '' ? Number(lastReading) : undefined,
         lastReadingDate: lastReadingDate || undefined,
         accountNumber:   accountNumber.trim() || undefined,
-        notes:           notes.trim() || undefined,
+        notes:           finalNotes,
       })
       setSavedMeterNumber(result.meter_number)
       setSuccess(true)
@@ -192,7 +216,7 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
     setMeterNumber(''); setUnitSearch(''); setSelectedUnit(null)
     setLastReading(''); setLastReadingDate(new Date().toISOString().slice(0, 10))
     setAccountNumber(''); setNotes(''); setError(''); setSuccess(false)
-    setNumberStatus('idle')
+    setNumberStatus('idle'); setQrDataUrl(null)
   }
 
   // ── Success screen ────────────────────────────────────────────────────────
@@ -207,6 +231,17 @@ export default function RegisterMeter({ onBack }: { onBack: () => void }) {
         </div>
         <h2 className="text-xl font-bold text-gray-900">Meter Registered</h2>
         <p className="text-gray-500 mt-2">#{savedMeterNumber} has been added to the system.</p>
+        {qrDataUrl && (
+          <div className="mt-5 flex flex-col items-center">
+            <img src={qrDataUrl} alt="QR code" className="w-40 h-40 rounded-xl shadow-sm" />
+            <p className="text-xs text-gray-400 mt-1.5">Scan to look up this meter</p>
+          </div>
+        )}
+        {gps && (
+          <p className="text-xs text-gray-400 mt-3">
+            GPS logged: {gps.lat.toFixed(5)}, {gps.lng.toFixed(5)}
+          </p>
+        )}
         <div className="flex flex-col gap-3 mt-8 w-full max-w-xs">
           <button onClick={resetForm}
             className="w-full py-3 bg-green-600 text-white rounded-xl font-semibold text-base">

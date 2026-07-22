@@ -120,6 +120,7 @@ export interface UnreadMeter {
   meter_type: string
   last_reading: number | null
   last_reading_date: string | null
+  last_reading_source?: string | null
 }
 
 export async function getUnreadMeters(period: string): Promise<UnreadMeter[]> {
@@ -177,6 +178,10 @@ export function getReadMeters(period: string): Promise<ReadMeter[]> {
 
 export function getAnomalyReadings(period: string): Promise<ReadMeter[]> {
   return apiFetch(`/meter-readings?period=${encodeURIComponent(period)}&anomaly=true`)
+}
+
+export function getTamperedReadings(period: string): Promise<ReadMeter[]> {
+  return apiFetch(`/meter-readings?period=${encodeURIComponent(period)}&tampered=true`)
 }
 
 export async function getActivePeriod(): Promise<string | null> {
