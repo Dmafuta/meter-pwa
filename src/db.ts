@@ -89,3 +89,14 @@ export async function resetFailed(id: number): Promise<void> {
     await store.put(STORE, { ...item, failCount: 0, lastError: undefined })
   }
 }
+
+export async function resetAllFailed(): Promise<void> {
+  const store = await db
+  if (!store) return
+  const all = await store.getAll(STORE) as PendingReading[]
+  await Promise.all(
+    all
+      .filter(item => (item.failCount ?? 0) > 0)
+      .map(item => store.put(STORE, { ...item, failCount: 0, lastError: undefined }))
+  )
+}

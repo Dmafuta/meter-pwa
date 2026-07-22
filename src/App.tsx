@@ -11,6 +11,7 @@ import InstallPrompt from './components/InstallPrompt'
 import { getActivePeriod } from './api'
 import type { UnreadMeter } from './api'
 import { countPending } from './db'
+import { syncPending } from './sync'
 
 type Page = 'login' | 'period' | 'list' | 'entry' | 'queue' | 'register' | 'supervisor'
 
@@ -35,6 +36,46 @@ export default function App() {
   const [selectedMeter, setSelectedMeter] = useState<UnreadMeter | null>(null)
   const [meterQueue, setMeterQueue]       = useState<UnreadMeter[]>([])
   const [meterIndex, setMeterIndex]       = useState(0)
+
+  // Pending count for badge + document title (poll every 15s)
+  const [pendingCount, setPendingCount] = useState(0)
+  useEffect(() => {
+    const refresh = () => countPending().then(setPendingCount).catch(() => {})
+    void refresh()
+    const id = setInterval(refresh, 15000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    document.title = pendingCount > 0 ? `(${pendingCount}) Meter Readings` : 'Meter Readings'
+    const nav = navigator as Navigator & {
+      setAppBadge?(n: number): Promise<void>
+      clearAppBadge?(): Promise<void>
+    }
+    if (pendingCount > 0) nav.setAppBadge?.(pendingCount)?.catch(() => {})
+    else                  nav.clearAppBadge?.()?.catch(() => {})
+  }, [pendingCount])
+
+  // Auto-sync when tab regains focus (complements OfflineBanner's online-event sync)
+  useEffect(() => {
+    function handleVisibility() {
+      if (!document.hidden && navigator.onLine) {
+        void syncPending().then(n => setPendingCount(n))
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
+  // SW background sync relay: service worker posts SYNC_READINGS when OS wakes it
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const handler = (e: MessageEvent<{ type?: string }>) => {
+      if (e.data?.type === 'SYNC_READINGS') void syncPending().then(n => setPendingCount(n))
+    }
+    navigator.serviceWorker.addEventListener('message', handler)
+    return () => navigator.serviceWorker.removeEventListener('message', handler)
+  }, [])
 
   // Fetch active period when reaching period selection
   useEffect(() => {

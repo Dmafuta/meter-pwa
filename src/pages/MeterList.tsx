@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { getUnreadMeters, getReadMeters, getMyAssignments, type UnreadMeter, type ReadMeter } from '../api'
-import { countPending } from '../db'
+import { getUnreadMeters, getReadMeters, getMyAssignments, submitReading, type UnreadMeter, type ReadMeter } from '../api'
+import { countPending, queueReading } from '../db'
 
 const UTILITY_BADGE: Record<string, string> = {
   water:       'bg-blue-100 text-blue-700',
@@ -28,6 +28,11 @@ function formatSynced(d: Date): string {
   const mins = Math.floor((Date.now() - d.getTime()) / 60000)
   if (mins < 1) return 'just now'
   return `${mins}m ago`
+}
+
+function daysSince(dateStr: string | null): number | null {
+  if (!dateStr) return null
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
 }
 
 export default function MeterList({
@@ -68,6 +73,35 @@ export default function MeterList({
   const completedAt                       = useRef<number | null>(null)
   const touchStartY                       = useRef(0)
   const bodyRef                           = useRef<HTMLDivElement>(null)
+  const longPressRef                      = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Long-press → quick inaccessible
+  const [inaccessibleTarget, setInaccessibleTarget]   = useState<UnreadMeter | null>(null)
+  const [inaccessibleLoading, setInaccessibleLoading] = useState(false)
+
+  function startLongPress(m: UnreadMeter) {
+    longPressRef.current = setTimeout(() => {
+      navigator.vibrate?.(50)
+      setInaccessibleTarget(m)
+    }, 600)
+  }
+  function cancelLongPress() {
+    if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null }
+  }
+
+  async function confirmInaccessible(m: UnreadMeter) {
+    setInaccessibleLoading(true)
+    const value = m.last_reading ?? 0
+    const note  = 'Meter inaccessible'
+    try {
+      await submitReading(m.id, value, period, undefined, note)
+    } catch {
+      await queueReading({ meterId: m.id, meterNumber: m.meter_number, unitLabel: m.unit_label, currentValue: value, billingPeriod: period, notes: note, queuedAt: Date.now() })
+    }
+    setInaccessibleTarget(null)
+    setInaccessibleLoading(false)
+    void load()
+  }
 
   // Live elapsed timer
   useEffect(() => {
@@ -244,6 +278,35 @@ export default function MeterList({
   // ── Normal list ──────────────────────────────────────────────────────────────
   return (
     <div className={`flex flex-col min-h-screen bg-gray-50${hcClass}`}>
+
+      {/* Quick-inaccessible confirmation overlay */}
+      {inaccessibleTarget && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end">
+          <div className="bg-white rounded-t-3xl w-full p-5 pb-8 space-y-3">
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto" />
+            <h2 className="text-lg font-bold text-gray-900">Mark as inaccessible?</h2>
+            <p className="text-sm text-gray-500">{inaccessibleTarget.unit_label} · #{inaccessibleTarget.meter_number}</p>
+            <p className="text-xs text-gray-400">
+              Previous reading ({inaccessibleTarget.last_reading ?? 0}) will be submitted with an inaccessible note.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => { cancelLongPress(); setInaccessibleTarget(null) }}
+                className="flex-1 border-2 border-gray-200 text-gray-700 rounded-2xl py-3 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmInaccessible(inaccessibleTarget)}
+                disabled={inaccessibleLoading}
+                className="flex-1 bg-orange-500 text-white rounded-2xl py-3 font-semibold disabled:opacity-50"
+              >
+                {inaccessibleLoading ? 'Saving…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="bg-green-600 text-white px-4 pt-12 pb-4 safe-top">
@@ -435,28 +498,48 @@ export default function MeterList({
                 {q ? `No meters match "${query}"` : `No unread ${utilityFilter.replace('_', ' ')} meters`}
               </div>
             ) : (
-              filtered.map((m, idx) => (
-                <button
-                  key={m.id}
-                  onClick={() => onMeterSelect(m, filtered, idx)}
-                  className="w-full bg-white rounded-xl shadow-sm p-4 text-left active:bg-gray-50 flex items-center gap-3"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-semibold text-gray-900 truncate">{m.unit_label}</span>
-                      <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${UTILITY_BADGE[m.utility_type] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {m.utility_type.replace('_', ' ')}
-                      </span>
+              filtered.map((m, idx) => {
+                const days = daysSince(m.last_reading_date)
+                const isOverdue = days !== null && days > 35
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => onMeterSelect(m, filtered, idx)}
+                    onTouchStart={() => startLongPress(m)}
+                    onTouchEnd={cancelLongPress}
+                    onTouchMove={cancelLongPress}
+                    onMouseDown={() => startLongPress(m)}
+                    onMouseUp={cancelLongPress}
+                    onMouseLeave={cancelLongPress}
+                    className="w-full bg-white rounded-xl shadow-sm p-4 text-left active:bg-gray-50 flex items-center gap-3 select-none"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-semibold text-gray-900 truncate">{m.unit_label}</span>
+                        <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${UTILITY_BADGE[m.utility_type] ?? 'bg-gray-100 text-gray-600'}`}>
+                          {m.utility_type.replace('_', ' ')}
+                        </span>
+                        {m.last_reading_source === 'estimated' && (
+                          <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Est.</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-500 truncate">
+                          #{m.meter_number} · Prev: {m.last_reading ?? '—'}
+                        </p>
+                        {isOverdue && days !== null && (
+                          <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${days > 60 ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>
+                            {days}d
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-500 truncate">
-                      #{m.meter_number} · Prev: {m.last_reading ?? '—'}
-                    </p>
-                  </div>
-                  <svg className="w-5 h-5 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              ))
+                    <svg className="w-5 h-5 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )
+              })
             )}
 
             {/* Already-read section */}

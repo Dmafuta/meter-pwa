@@ -12,6 +12,12 @@ function formatPeriod(p: string): string {
     .toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
+function prevPeriod(p: string): string {
+  const [y, m] = p.split('-').map(Number)
+  const d = new Date(y, m - 2, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 export default function SupervisorDashboard({
   period,
   onChangePeriod,
@@ -37,6 +43,8 @@ export default function SupervisorDashboard({
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [showDoneToast, setShowDoneToast] = useState(false)
   const prevUnreadRef = useRef<number | null>(null)
+  const [prevProgress, setPrevProgress]   = useState<ReadingProgress | null>(null)
+  const [anomalyReaderFilter, setAnomalyReaderFilter] = useState('all')
 
   useEffect(() => {
     setLoading(true)
@@ -47,7 +55,8 @@ export default function SupervisorDashboard({
       getUnreadMeters(period),
       getAnomalyReadings(period),
       getTamperedReadings(period),
-    ]).then(([prog, perf, unread, anomalies, tampered]) => {
+      getReadingProgress(prevPeriod(period)).catch(() => null),
+    ]).then(([prog, perf, unread, anomalies, tampered, prev]) => {
       // All-done toast: fire when unread transitions from > 0 → 0 on refresh
       if (prevUnreadRef.current !== null && prevUnreadRef.current > 0 && prog.total_unread === 0) {
         setShowDoneToast(true)
@@ -59,6 +68,7 @@ export default function SupervisorDashboard({
       setUnreadMeters(unread)
       setAnomalyReadings(anomalies)
       setTamperedReadings(tampered)
+      setPrevProgress(prev)
       setLastRefreshed(new Date())
     }).catch(() => {
       setError('Failed to load supervisor data.')
@@ -164,7 +174,19 @@ export default function SupervisorDashboard({
             {tab === 'overview' && progress && (
               <>
                 <div className="bg-white rounded-2xl shadow-sm p-5">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Reading Progress</p>
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Reading Progress</p>
+                    {prevProgress && (() => {
+                      const delta = Number(progress.completion_pct) - Number(prevProgress.completion_pct)
+                      return (
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          delta > 0 ? 'bg-green-50 text-green-700' : delta < 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-400'
+                        }`}>
+                          {delta > 0 ? '↑' : delta < 0 ? '↓' : '→'}{Math.abs(delta).toFixed(1)}% vs last
+                        </span>
+                      )
+                    })()}
+                  </div>
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-20 h-20 rounded-full border-8 border-indigo-100 flex items-center justify-center shrink-0"
                       style={{ background: `conic-gradient(#4f46e5 ${progress.completion_pct * 3.6}deg, #e0e7ff 0deg)` }}>
@@ -333,13 +355,42 @@ export default function SupervisorDashboard({
                   <p className="font-semibold text-gray-900">No anomalies</p>
                   <p className="text-sm text-gray-500 mt-1">All readings are within normal range</p>
                 </div>
-              ) : (
-                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+              ) : (() => {
+                const anomalyReaders = [...new Set(anomalyReadings.map(r => r.read_by ?? 'Unknown'))]
+                const filtered = anomalyReaderFilter === 'all'
+                  ? anomalyReadings
+                  : anomalyReadings.filter(r => (r.read_by ?? 'Unknown') === anomalyReaderFilter)
+                return (
+                <div className="space-y-3">
+                  {/* Filter + export toolbar */}
+                  <div className="flex items-center gap-2">
+                    {anomalyReaders.length > 1 && (
+                      <select
+                        value={anomalyReaderFilter}
+                        onChange={e => setAnomalyReaderFilter(e.target.value)}
+                        className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                      >
+                        <option value="all">All readers</option>
+                        {anomalyReaders.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    )}
+                    <button
+                      onClick={() => exportAnomalyCsv(anomalyReadings, period)}
+                      className="text-indigo-600 active:text-indigo-800 shrink-0"
+                      title="Export CSV"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">
-                    {anomalyReadings.length} anomalous reading{anomalyReadings.length !== 1 ? 's' : ''}
+                    {filtered.length} anomalous reading{filtered.length !== 1 ? 's' : ''}{anomalyReaderFilter !== 'all' ? ` · ${anomalyReaderFilter}` : ''}
                   </p>
                   <div className="divide-y divide-gray-50">
-                    {anomalyReadings.map(r => (
+                    {filtered.map(r => (
                       <div key={r.id} className="px-4 py-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -363,13 +414,32 @@ export default function SupervisorDashboard({
                     ))}
                   </div>
                 </div>
-              )
+                </div>
+                )
+              })()
             )}
           </>
         )}
       </div>
     </div>
   )
+}
+
+function exportAnomalyCsv(readings: ReadMeter[], period: string) {
+  const rows = ['Unit,Meter Number,Reading,Consumption,Reader,Date']
+  readings.forEach(r => rows.push([
+    `"${(r.unit_label ?? '').replace(/"/g, '""')}"`,
+    r.meter_number,
+    r.current_value,
+    Number(r.units_consumed).toFixed(1),
+    r.read_by ?? '',
+    r.reading_date ?? '',
+  ].join(',')))
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url; a.download = `anomalies-${period}.csv`; a.click()
+  URL.revokeObjectURL(url)
 }
 
 function exportUnreadCsv(meters: UnreadMeter[], period: string) {

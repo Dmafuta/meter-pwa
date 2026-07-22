@@ -1,5 +1,15 @@
 import { useState, useEffect } from 'react'
 
+const RECENT_KEY = 'meter_recent_periods'
+
+function getRecent(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') } catch { return [] }
+}
+function saveRecent(p: string) {
+  const list = [p, ...getRecent().filter(x => x !== p)].slice(0, 3)
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list))
+}
+
 function currentPeriod(): string {
   const now = new Date()
   // Default to previous month — readings taken at start of month bill the prior month's consumption
@@ -37,9 +47,11 @@ export default function PeriodSelect({
 
   // Auto-advance when the active period is confirmed (non-field-tech roles)
   useEffect(() => {
-    if (locked && activePeriod) onSelect(activePeriod)
+    if (locked && activePeriod) { saveRecent(activePeriod); onSelect(activePeriod) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked, activePeriod])
+
+  const recentPeriods = !locked ? getRecent().filter(p => p !== period) : []
 
   // Still show the locked screen briefly while activePeriod is loading
   if (locked && !activePeriod) {
@@ -94,8 +106,39 @@ export default function PeriodSelect({
             </div>
           )}
 
+          {/* Active period quick-tap (for field tech who can freely navigate) */}
+          {!locked && activePeriod && activePeriod !== period && (
+            <div className="mb-4">
+              <button
+                onClick={() => { setPeriod(activePeriod); saveRecent(activePeriod); onSelect(activePeriod) }}
+                className="w-full flex items-center justify-between px-3 py-2.5 bg-green-50 border border-green-200 rounded-xl"
+              >
+                <span className="text-xs font-semibold text-green-700">Active period</span>
+                <span className="text-sm font-bold text-green-800">{formatPeriod(activePeriod)}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Recently used */}
+          {recentPeriods.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs text-gray-400 mb-2">Recent</p>
+              <div className="flex flex-wrap gap-2">
+                {recentPeriods.map(p => (
+                  <button
+                    key={p}
+                    onClick={() => { setPeriod(p); saveRecent(p); onSelect(p) }}
+                    className="text-xs px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 font-medium active:bg-gray-100"
+                  >
+                    {formatPeriod(p)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <button
-            onClick={() => onSelect(period)}
+            onClick={() => { saveRecent(period); onSelect(period) }}
             className="w-full bg-green-600 text-white rounded-xl py-3.5 font-semibold text-base active:bg-green-700 transition-colors"
           >
             {SUPERVISOR_ROLES.includes(user.role ?? '') ? 'Open Dashboard' : 'Start Reading'}

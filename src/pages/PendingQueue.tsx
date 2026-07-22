@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { listPending, removePending, resetFailed, type PendingReading } from '../db'
+import { listPending, removePending, resetFailed, resetAllFailed, type PendingReading } from '../db'
 import { syncPendingWithProgress, MAX_RETRIES } from '../sync'
 
 function formatDate(ts: number) {
@@ -50,6 +50,20 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
     setSyncingId(null)
   }
 
+  async function retryAllFailed() {
+    if (syncing || !navigator.onLine) return
+    await resetAllFailed()
+    await load()
+    setSyncing(true)
+    await syncPendingWithProgress(
+      (id) => setSyncingId(id),
+      ()   => setSyncingId(null)
+    )
+    await load()
+    setSyncing(false)
+    setSyncingId(null)
+  }
+
   const failed  = items.filter(i => (i.failCount ?? 0) > 0)
   const pending = items.filter(i => (i.failCount ?? 0) === 0)
 
@@ -77,15 +91,25 @@ export default function PendingQueue({ onBack }: { onBack: () => void }) {
               </p>
             )}
           </div>
-          {items.length > 0 && (
-            <button
-              onClick={() => void handleSync()}
-              disabled={syncing || !navigator.onLine}
-              className="text-sm font-semibold bg-white/20 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
-            >
-              {syncing ? 'Syncing…' : !navigator.onLine ? 'Offline' : 'Sync all'}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {failed.length > 0 && !syncing && navigator.onLine && (
+              <button
+                onClick={() => void retryAllFailed()}
+                className="text-xs font-semibold bg-white/15 text-white px-2.5 py-1.5 rounded-lg"
+              >
+                Retry failed ({failed.length})
+              </button>
+            )}
+            {items.length > 0 && (
+              <button
+                onClick={() => void handleSync()}
+                disabled={syncing || !navigator.onLine}
+                className="text-sm font-semibold bg-white/20 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+              >
+                {syncing ? 'Syncing…' : !navigator.onLine ? 'Offline' : 'Sync all'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
