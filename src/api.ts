@@ -165,10 +165,18 @@ export interface ReadMeter {
   read_by: string | null
   reading_date: string | null
   notes: string | null
+  anomaly: boolean
+  tampered: boolean
+  utility_type: string
+  units_consumed: number
 }
 
 export function getReadMeters(period: string): Promise<ReadMeter[]> {
   return apiFetch(`/meter-readings?period=${encodeURIComponent(period)}`)
+}
+
+export function getAnomalyReadings(period: string): Promise<ReadMeter[]> {
+  return apiFetch(`/meter-readings?period=${encodeURIComponent(period)}&anomaly=true`)
 }
 
 export async function getActivePeriod(): Promise<string | null> {

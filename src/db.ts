@@ -47,6 +47,11 @@ export async function queueReading(r: Omit<PendingReading, 'id' | 'failCount'>):
   const store = await db
   if (!store) return
   await store.add(STORE, { ...r, failCount: 0 })
+  // Register a background sync tag so the OS can wake the service worker
+  // when connectivity is restored, even if the app is not open.
+  navigator.serviceWorker?.ready
+    .then(reg => (reg as unknown as { sync?: { register(tag: string): Promise<void> } }).sync?.register('sync-readings'))
+    .catch(() => {})
 }
 
 export async function listPending(): Promise<PendingReading[]> {

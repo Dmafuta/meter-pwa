@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getUnreadMeters, getReadMeters, getMyAssignments, type UnreadMeter, type ReadMeter } from '../api'
 import { countPending } from '../db'
 
@@ -53,8 +53,12 @@ export default function MeterList({
   const [error, setError]                 = useState('')
   const [pending, setPending]             = useState(0)
   const [query, setQuery]                 = useState('')
+  const [utilityFilter, setUtilityFilter] = useState<string>('all')
   const [elapsed, setElapsed]             = useState(0)
+  const [pullProgress, setPullProgress]   = useState(0)
   const completedAt                       = useRef<number | null>(null)
+  const touchStartY                       = useRef(0)
+  const bodyRef                           = useRef<HTMLDivElement>(null)
 
   // Live elapsed timer
   useEffect(() => {
@@ -103,14 +107,34 @@ export default function MeterList({
 
   useEffect(() => { void load() }, [load, refreshKey])
 
+  // Pull-to-refresh handlers
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartY.current = e.touches[0].clientY
+  }
+  function handleTouchMove(e: React.TouchEvent) {
+    const el = bodyRef.current
+    if (!el || el.scrollTop > 0) return
+    const dy = e.touches[0].clientY - touchStartY.current
+    if (dy > 0) setPullProgress(Math.min(1, dy / 70))
+  }
+  function handleTouchEnd() {
+    if (pullProgress >= 1) void load()
+    setPullProgress(0)
+  }
+
+  // Collect unique utility types for the filter chips
+  const utilityTypes = useMemo(() => {
+    const types = [...new Set(meters.map(m => m.utility_type))]
+    return types.sort()
+  }, [meters])
+
   // Filtered unread meters
   const q = query.trim().toLowerCase()
-  const filtered = q
-    ? meters.filter(m =>
-        m.unit_label.toLowerCase().includes(q) ||
-        m.meter_number.toLowerCase().includes(q)
-      )
-    : meters
+  const filtered = meters.filter(m => {
+    if (utilityFilter !== 'all' && m.utility_type !== utilityFilter) return false
+    if (q && !m.unit_label.toLowerCase().includes(q) && !m.meter_number.toLowerCase().includes(q)) return false
+    return true
+  })
 
   const total    = meters.length + readMeters.length
   const progress = total > 0 ? Math.round((readMeters.length / total) * 100) : 0
@@ -299,8 +323,42 @@ export default function MeterList({
         </div>
       )}
 
+      {/* Utility type filter chips — shown when more than one type */}
+      {!loading && !error && utilityTypes.length > 1 && (
+        <div className="px-4 py-2 bg-white border-b border-gray-100 flex items-center gap-1.5 overflow-x-auto">
+          {(['all', ...utilityTypes] as string[]).map(type => (
+            <button
+              key={type}
+              onClick={() => setUtilityFilter(type)}
+              className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                utilityFilter === type
+                  ? 'bg-green-600 border-green-600 text-white'
+                  : 'border-gray-200 text-gray-500 bg-white'
+              }`}
+            >
+              {type === 'all' ? 'All' : type.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Body */}
-      <div className="flex-1 px-4 py-4 overflow-y-auto">
+      <div
+        ref={bodyRef}
+        className="flex-1 px-4 py-4 overflow-y-auto"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Pull-to-refresh indicator */}
+        {pullProgress > 0 && (
+          <div className="flex justify-center pb-2 -mt-2">
+            <div
+              className={`w-6 h-6 rounded-full border-2 border-green-600 border-t-transparent ${pullProgress >= 1 ? 'animate-spin' : ''}`}
+              style={{ transform: `rotate(${pullProgress * 270}deg)`, opacity: pullProgress }}
+            />
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
@@ -319,15 +377,15 @@ export default function MeterList({
         ) : (
           <div className="space-y-2">
             {/* Search result count */}
-            {q && (
+            {(q || utilityFilter !== 'all') && (
               <p className="text-xs text-gray-400 px-1">
-                {filtered.length} of {meters.length} meters match "{query}"
+                {filtered.length} of {meters.length} meters{q ? ` match "${query}"` : ''}
               </p>
             )}
 
-            {filtered.length === 0 && q ? (
+            {filtered.length === 0 && (q || utilityFilter !== 'all') ? (
               <div className="text-center py-10 text-gray-400 text-sm">
-                No meters match "{query}"
+                {q ? `No meters match "${query}"` : `No unread ${utilityFilter.replace('_', ' ')} meters`}
               </div>
             ) : (
               filtered.map((m, idx) => (

@@ -76,6 +76,9 @@ export default function ReadingEntry({
     getReadingHistory(meter.id).then(setHistory).catch(() => {})
   }, [meter.id])
 
+  // Electricity and gas meters show decimals; water meters are whole-number
+  const isDecimalMeter = meter.utility_type === 'electricity' || meter.utility_type === 'gas'
+
   const current     = currentValue !== '' ? parseFloat(currentValue) : NaN
   const prev        = meter.last_reading ?? 0
   const consumption = !isNaN(current) ? Math.max(0, current - prev) : null
@@ -126,6 +129,7 @@ export default function ReadingEntry({
       await submitReading(meter.id, current, period, photo ?? undefined, notes || undefined,
         gps?.lat, gps?.lng, sealNumber || undefined, tampered || undefined)
       setSuccess(true)
+      navigator.vibrate?.(100)
       setShowConfirm(false)
       setTimeout(onSubmitted, 1200)
     } catch (err) {
@@ -140,6 +144,7 @@ export default function ReadingEntry({
           queuedAt: Date.now(),
         })
         setSuccess(true)
+        navigator.vibrate?.(200)
         setShowConfirm(false)
         setTimeout(onSubmitted, 1200)
       } else {
@@ -160,6 +165,7 @@ export default function ReadingEntry({
     try {
       await submitReading(meter.id, value, period, undefined, inaccessibleNote, gps?.lat, gps?.lng)
       setSuccess(true)
+      navigator.vibrate?.(100)
       setTimeout(onSubmitted, 1200)
     } catch (err) {
       const isOffline = !navigator.onLine || String(err).includes('Failed to fetch')
@@ -170,6 +176,7 @@ export default function ReadingEntry({
           latitude: gps?.lat, longitude: gps?.lng, queuedAt: Date.now(),
         })
         setSuccess(true)
+        navigator.vibrate?.(200)
         setTimeout(onSubmitted, 1200)
       } else {
         setError(err instanceof Error ? err.message : 'Failed to submit')
@@ -314,12 +321,12 @@ export default function ReadingEntry({
             <label className="block text-sm font-semibold text-gray-700 mb-2">Current Reading</label>
             <input
               type="number"
-              inputMode="decimal"
-              step="0.001"
+              inputMode={isDecimalMeter ? 'decimal' : 'numeric'}
+              step={isDecimalMeter ? '0.001' : '1'}
               value={currentValue}
               onChange={e => { setCurrentValue(e.target.value); setError('') }}
               className="w-full border-2 border-gray-200 rounded-xl px-4 py-4 text-3xl font-bold text-center text-gray-900 focus:outline-none focus:border-green-500 transition-colors"
-              placeholder="0.000"
+              placeholder={isDecimalMeter ? '0.000' : '0'}
               required
               autoFocus
             />

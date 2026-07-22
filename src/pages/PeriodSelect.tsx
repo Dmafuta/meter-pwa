@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 function currentPeriod(): string {
   const now = new Date()
@@ -34,6 +34,22 @@ export default function PeriodSelect({
   // Field technicians keep free navigation; other roles are locked to the active period if set
   const locked = !isFieldTech && activePeriod != null
   const [period, setPeriod] = useState(() => (locked ? activePeriod : currentPeriod()))
+
+  // Auto-advance when the active period is confirmed (non-field-tech roles)
+  useEffect(() => {
+    if (locked && activePeriod) onSelect(activePeriod)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, activePeriod])
+
+  // Still show the locked screen briefly while activePeriod is loading
+  if (locked && !activePeriod) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
+        <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-gray-400 mt-3">Loading period…</p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">

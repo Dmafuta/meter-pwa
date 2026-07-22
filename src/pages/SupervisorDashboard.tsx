@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getReadingProgress, getReaderPerformance, type ReadingProgress, type ReaderPerformance } from '../api'
+import { getReadingProgress, getReaderPerformance, getUnreadMeters, getAnomalyReadings, type ReadingProgress, type ReaderPerformance, type UnreadMeter, type ReadMeter } from '../api'
 
 function formatPeriod(p: string): string {
   const [year, month] = p.split('-')
@@ -18,8 +18,13 @@ export default function SupervisorDashboard({
   onGoToList: () => void
   onLogout: () => void
 }) {
+  type DashTab = 'overview' | 'unread' | 'anomalies'
+
+  const [tab, setTab]                   = useState<DashTab>('overview')
   const [progress, setProgress]         = useState<ReadingProgress | null>(null)
   const [performance, setPerformance]   = useState<ReaderPerformance[]>([])
+  const [unreadMeters, setUnreadMeters] = useState<UnreadMeter[]>([])
+  const [anomalyReadings, setAnomalyReadings] = useState<ReadMeter[]>([])
   const [loading, setLoading]           = useState(true)
   const [error, setError]               = useState('')
   const [refreshKey, setRefreshKey]     = useState(0)
@@ -31,9 +36,13 @@ export default function SupervisorDashboard({
     Promise.all([
       getReadingProgress(period),
       getReaderPerformance(period),
-    ]).then(([prog, perf]) => {
+      getUnreadMeters(period),
+      getAnomalyReadings(period),
+    ]).then(([prog, perf, unread, anomalies]) => {
       setProgress(prog)
       setPerformance(perf)
+      setUnreadMeters(unread)
+      setAnomalyReadings(anomalies)
       setLastRefreshed(new Date())
     }).catch(() => {
       setError('Failed to load supervisor data.')
@@ -79,6 +88,25 @@ export default function SupervisorDashboard({
         </button>
       </div>
 
+      {/* Tab bar */}
+      <div className="flex border-b border-gray-200 bg-white">
+        {([
+          { key: 'overview',  label: 'Overview' },
+          { key: 'unread',    label: `Unread${!loading && progress ? ` (${progress.total_unread})` : ''}` },
+          { key: 'anomalies', label: `Anomalies${!loading && anomalyReadings.length > 0 ? ` (${anomalyReadings.length})` : ''}` },
+        ] as { key: DashTab; label: string }[]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${
+              tab === t.key ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-400'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 px-4 py-5 space-y-4">
         {loading ? (
           <div className="flex justify-center py-16">
@@ -86,75 +114,145 @@ export default function SupervisorDashboard({
           </div>
         ) : error ? (
           <div className="text-center py-12 text-gray-500">{error}</div>
-        ) : progress ? (
+        ) : (
           <>
-            {/* Progress summary */}
-            <div className="bg-white rounded-2xl shadow-sm p-5">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Reading Progress</p>
-
-              {/* Big progress ring approximation via text */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-20 h-20 rounded-full border-8 border-indigo-100 flex items-center justify-center shrink-0"
-                  style={{
-                    background: `conic-gradient(#4f46e5 ${progress.completion_pct * 3.6}deg, #e0e7ff 0deg)`
-                  }}>
-                  <span className="text-lg font-bold text-indigo-700">{Number(progress.completion_pct).toFixed(0)}%</span>
-                </div>
-                <div className="flex-1 space-y-2">
-                  <StatRow label="Total meters" value={String(progress.total_active_meters)} />
-                  <StatRow label="Read" value={String(progress.total_read)} color="text-green-600" />
-                  <StatRow label="Unread" value={String(progress.total_unread)} color="text-red-500" />
-                </div>
-              </div>
-
-              {(progress.anomaly_count > 0 || progress.tampered_count > 0) && (
-                <div className="flex gap-2 pt-3 border-t border-gray-100">
-                  {progress.anomaly_count > 0 && (
-                    <AlertBadge label={`${progress.anomaly_count} anomaly`} color="orange" />
-                  )}
-                  {progress.tampered_count > 0 && (
-                    <AlertBadge label={`${progress.tampered_count} tampered`} color="red" />
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* By reader */}
-            {progress.by_reader.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">By Reader</p>
-                <div className="divide-y divide-gray-50">
-                  {progress.by_reader.map(r => (
-                    <div key={r.reader_name} className="flex items-center justify-between px-4 py-3">
-                      <span className="text-sm font-medium text-gray-700">{r.reader_name}</span>
-                      <span className="text-sm font-bold text-indigo-600">{r.read_count} read</span>
+            {/* ── OVERVIEW TAB ─────────────────────────────────────────────── */}
+            {tab === 'overview' && progress && (
+              <>
+                <div className="bg-white rounded-2xl shadow-sm p-5">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Reading Progress</p>
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-20 h-20 rounded-full border-8 border-indigo-100 flex items-center justify-center shrink-0"
+                      style={{ background: `conic-gradient(#4f46e5 ${progress.completion_pct * 3.6}deg, #e0e7ff 0deg)` }}>
+                      <span className="text-lg font-bold text-indigo-700">{Number(progress.completion_pct).toFixed(0)}%</span>
                     </div>
-                  ))}
+                    <div className="flex-1 space-y-2">
+                      <StatRow label="Total meters" value={String(progress.total_active_meters)} />
+                      <StatRow label="Read"          value={String(progress.total_read)}          color="text-green-600" />
+                      <StatRow label="Unread"        value={String(progress.total_unread)}        color="text-red-500" />
+                    </div>
+                  </div>
+                  {(progress.anomaly_count > 0 || progress.tampered_count > 0) && (
+                    <div className="flex gap-2 pt-3 border-t border-gray-100">
+                      {progress.anomaly_count > 0 && (
+                        <button onClick={() => setTab('anomalies')}>
+                          <AlertBadge label={`${progress.anomaly_count} anomaly ›`} color="orange" />
+                        </button>
+                      )}
+                      {progress.tampered_count > 0 && (
+                        <AlertBadge label={`${progress.tampered_count} tampered`} color="red" />
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
+
+                {progress.by_reader.length > 0 && (
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">By Reader</p>
+                    <div className="divide-y divide-gray-50">
+                      {progress.by_reader.map(r => (
+                        <div key={r.reader_name} className="flex items-center justify-between px-4 py-3">
+                          <span className="text-sm font-medium text-gray-700">{r.reader_name}</span>
+                          <span className="text-sm font-bold text-indigo-600">{r.read_count} read</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {performance.length > 0 && (
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">Reader Performance</p>
+                    <div className="divide-y divide-gray-50">
+                      {performance.map(p => (
+                        <div key={p.reader_name} className="px-4 py-3">
+                          <p className="text-sm font-semibold text-gray-800">{p.reader_name}</p>
+                          <div className="flex gap-4 mt-1.5 flex-wrap">
+                            <PerfBadge label="Read"         value={p.readings_count} />
+                            {p.anomaly_count > 0     && <PerfBadge label="Anomaly"     value={p.anomaly_count}     color="orange" />}
+                            {p.tampered_count > 0    && <PerfBadge label="Tampered"    value={p.tampered_count}    color="red" />}
+                            {p.inaccessible_count > 0 && <PerfBadge label="Inaccessible" value={p.inaccessible_count} color="gray" />}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Reader performance */}
-            {performance.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">Reader Performance</p>
-                <div className="divide-y divide-gray-50">
-                  {performance.map(p => (
-                    <div key={p.reader_name} className="px-4 py-3">
-                      <p className="text-sm font-semibold text-gray-800">{p.reader_name}</p>
-                      <div className="flex gap-4 mt-1.5 flex-wrap">
-                        <PerfBadge label="Read" value={p.readings_count} />
-                        {p.anomaly_count > 0 && <PerfBadge label="Anomaly" value={p.anomaly_count} color="orange" />}
-                        {p.tampered_count > 0 && <PerfBadge label="Tampered" value={p.tampered_count} color="red" />}
-                        {p.inaccessible_count > 0 && <PerfBadge label="Inaccessible" value={p.inaccessible_count} color="gray" />}
-                      </div>
-                    </div>
-                  ))}
+            {/* ── UNREAD TAB ───────────────────────────────────────────────── */}
+            {tab === 'unread' && (
+              unreadMeters.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="text-5xl mb-3">✓</div>
+                  <p className="font-semibold text-gray-900">All meters read!</p>
+                  <p className="text-sm text-gray-500 mt-1">No unread meters for {formatPeriod(period)}</p>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">
+                    {unreadMeters.length} meter{unreadMeters.length !== 1 ? 's' : ''} not yet read
+                  </p>
+                  <div className="divide-y divide-gray-50">
+                    {unreadMeters.map(m => (
+                      <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{m.unit_label}</p>
+                          <p className="text-xs text-gray-400">#{m.meter_number} · {m.utility_type.replace('_', ' ')}</p>
+                        </div>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          Prev: {m.last_reading ?? '—'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* ── ANOMALIES TAB ────────────────────────────────────────────── */}
+            {tab === 'anomalies' && (
+              anomalyReadings.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="text-5xl mb-3">✓</div>
+                  <p className="font-semibold text-gray-900">No anomalies</p>
+                  <p className="text-sm text-gray-500 mt-1">All readings are within normal range</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3">
+                    {anomalyReadings.length} anomalous reading{anomalyReadings.length !== 1 ? 's' : ''}
+                  </p>
+                  <div className="divide-y divide-gray-50">
+                    {anomalyReadings.map(r => (
+                      <div key={r.id} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{r.unit_label ?? '—'}</p>
+                            <p className="text-xs text-gray-400">#{r.meter_number} · {r.read_by ?? 'Unknown reader'}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-bold text-orange-600">{Number(r.current_value).toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">+{Number(r.units_consumed).toFixed(1)} units</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5 mt-1.5">
+                          {r.anomaly  && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">⚠ High consumption</span>}
+                          {r.tampered && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700">Tampered/Fault</span>}
+                          {r.notes?.includes('inaccessible') && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">Inaccessible</span>}
+                        </div>
+                        {r.notes && !r.notes.includes('inaccessible') && (
+                          <p className="text-xs text-gray-400 mt-1 truncate">{r.notes}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
             )}
           </>
-        ) : null}
+        )}
       </div>
     </div>
   )
