@@ -508,7 +508,7 @@ export default function SupervisorDashboard({
                               {d.user_name ?? 'Unknown user'}
                             </p>
                             <p className="text-xs text-gray-400 truncate mt-0.5">
-                              {d.device_name ? d.device_name.slice(0, 60) : d.device_id.slice(0, 12)}
+                              {(d.device_name ?? d.device_id ?? 'Unknown device').slice(0, 60)}
                             </p>
                             <p className="text-xs text-gray-400 mt-0.5">
                               {minsAgo < 1 ? 'Just now' : `${minsAgo}m ago`}
