@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { submitReading, getReadingHistory, type UnreadMeter, type MeterReadingHistory } from '../api'
+import { submitReading, getReadingHistory, initiateCall, type UnreadMeter, type MeterReadingHistory } from '../api'
 import { queueReading, loadHistoryCache } from '../db'
 
 // ── Quick-pick note templates ─────────────────────────────────────────────────
@@ -97,6 +97,8 @@ export default function ReadingEntry({
   const [listening, setListening]           = useState(false)
   const [flagReview, setFlagReview]         = useState(false)
   const [photoScale, setPhotoScale]         = useState(1)
+  const [callStatus, setCallStatus]         = useState<'idle' | 'calling' | 'ok' | 'err'>('idle')
+  const [callMessage, setCallMessage]       = useState('')
   const photoInputRef   = useRef<HTMLInputElement>(null)
   const advancedRef     = useRef(false)
   const touchStartXRef  = useRef(0)
@@ -783,6 +785,65 @@ export default function ReadingEntry({
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Call owner ───────────────────────────────────────────────────── */}
+        {meter.billing_person_phone && (
+          <div className="bg-white rounded-2xl shadow-sm p-4 space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Unit Contact</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{meter.billing_person_name ?? 'Occupant'}</p>
+                <p className="text-xs text-gray-400">{meter.billing_person_phone}</p>
+              </div>
+              <button
+                type="button"
+                disabled={callStatus === 'calling'}
+                onClick={async () => {
+                  setCallStatus('calling')
+                  setCallMessage('')
+                  try {
+                    const res = await initiateCall({
+                      unit_id:   meter.unit_id,
+                      meter_id:  meter.id,
+                      unit_label: meter.unit_label,
+                    })
+                    if (res.status === 'initiated') {
+                      setCallStatus('ok')
+                      setCallMessage('Call connected via 3CX')
+                    } else {
+                      setCallStatus('err')
+                      setCallMessage(res.message ?? 'Call failed')
+                    }
+                  } catch (e) {
+                    setCallStatus('err')
+                    setCallMessage(e instanceof Error ? e.message : 'Call failed')
+                  }
+                }}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 ${
+                  callStatus === 'ok'
+                    ? 'bg-green-100 text-green-700'
+                    : callStatus === 'err'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-blue-600 text-white active:bg-blue-700'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+                {callStatus === 'calling' ? 'Calling…'
+                  : callStatus === 'ok'   ? 'Called ✓'
+                  : callStatus === 'err'  ? 'Retry'
+                  : 'Call owner'}
+              </button>
+            </div>
+            {callMessage && (
+              <p className={`text-xs px-1 ${callStatus === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
+                {callMessage}
+              </p>
             )}
           </div>
         )}

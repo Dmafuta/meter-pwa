@@ -121,6 +121,9 @@ export interface UnreadMeter {
   last_reading: number | null
   last_reading_date: string | null
   last_reading_source?: string | null
+  billing_person_id?: string | null
+  billing_person_name?: string | null
+  billing_person_phone?: string | null
 }
 
 export async function getUnreadMeters(period: string): Promise<UnreadMeter[]> {
@@ -394,6 +397,27 @@ export interface OnlineDevice {
 
 export function getOnlineDevices(): Promise<OnlineDevice[]> {
   return apiFetch('/devices/online')
+}
+
+// ── 3CX Click-to-call ─────────────────────────────────────────────────────────
+
+export interface CallResult {
+  call_id: string
+  status: string   // initiated | failed | not_configured
+  message: string
+  person_name: string | null
+  phone_number: string | null
+}
+
+export function initiateCall(params: {
+  unit_id: string
+  meter_id?: string
+  unit_label?: string
+}): Promise<CallResult> {
+  return apiFetch('/calls', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
 }
 
 // ── AMR ingest (for admin/tooling; devices use the API-key endpoint directly) ──
