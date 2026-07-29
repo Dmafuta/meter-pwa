@@ -124,6 +124,8 @@ export interface UnreadMeter {
   billing_person_id?: string | null
   billing_person_name?: string | null
   billing_person_phone?: string | null
+  status?: string
+  investigation_reason?: string | null
 }
 
 export async function getUnreadMeters(period: string): Promise<UnreadMeter[]> {

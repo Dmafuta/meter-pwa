@@ -104,6 +104,11 @@ export default function ReadingEntry({
   const touchStartXRef  = useRef(0)
   const pinchRef        = useRef({ startDist: 0, startScale: 1 })
 
+  // ── Auto-flag tampered for meters under investigation ─────────────────────
+  useEffect(() => {
+    if (meter.status === 'under_investigation') setTampered(true)
+  }, [meter.status])
+
   // ── Screen Wake Lock — keep display on while reading ──────────────────────
   useEffect(() => {
     type WakeLockSentinel = { released: boolean; release(): Promise<void> }
@@ -253,6 +258,8 @@ export default function ReadingEntry({
     return Math.hypot(e.touches[1].clientX - e.touches[0].clientX, e.touches[1].clientY - e.touches[0].clientY)
   }
 
+  const isUnderInvestigation = meter.status === 'under_investigation'
+
   // ── Submit → open confirmation (or skip if preference set) ──────────────────
   function handleSubmitClick(e: React.FormEvent) {
     e.preventDefault()
@@ -261,9 +268,13 @@ export default function ReadingEntry({
       setError(`Reading (${current}) is less than previous (${meter.last_reading})`)
       return
     }
+    if (isUnderInvestigation && !photo) {
+      setError('Photo is required — this meter is under investigation')
+      return
+    }
     setError('')
     // Skip confirm sheet for normal readings when user has opted in
-    if (skipConfirm && !isAnomaly) {
+    if (skipConfirm && !isAnomaly && !isUnderInvestigation) {
       void confirmSubmit()
     } else {
       setShowConfirm(true)
@@ -465,6 +476,20 @@ export default function ReadingEntry({
       </div>
 
       <div className="flex-1 px-4 py-5 space-y-4 pb-10">
+
+        {/* ── Under investigation banner ────────────────────────────────────── */}
+        {isUnderInvestigation && (
+          <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-start gap-3">
+            <span className="text-xl mt-0.5">⚠️</span>
+            <div>
+              <p className="text-sm font-bold text-amber-800">Meter Under Investigation</p>
+              {meter.investigation_reason && (
+                <p className="text-xs text-amber-700 mt-0.5">{meter.investigation_reason}</p>
+              )}
+              <p className="text-xs text-amber-700 mt-1 font-medium">Photo is mandatory for this reading.</p>
+            </div>
+          </div>
+        )}
 
         {/* ── Previous reading card ─────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
