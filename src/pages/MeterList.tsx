@@ -123,16 +123,6 @@ export default function MeterList({
     return () => clearInterval(interval)
   }, [sessionStart])
 
-  // Online/offline tracking — also refresh meter list when connection is restored
-  useEffect(() => {
-    const on  = () => { setIsOnline(true); void load() }
-    const off = () => setIsOnline(false)
-    window.addEventListener('online',  on)
-    window.addEventListener('offline', off)
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, load])
-
   // IDs of meters that are queued locally for this period (submitted but not yet synced)
   async function getPendingMeterIds(p: string): Promise<Set<string>> {
     const pending = await listPending().catch(() => [])
@@ -201,6 +191,15 @@ export default function MeterList({
   }, [period])
 
   useEffect(() => { void load() }, [load, refreshKey])
+
+  // Online/offline tracking — also refresh meter list when connection is restored
+  useEffect(() => {
+    const handleOnline  = () => { setIsOnline(true); void load() }
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener('online',  handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline) }
+  }, [load])
 
   // Intersection observer: load more items as user scrolls toward sentinel
   useEffect(() => {
