@@ -12,6 +12,15 @@ const NOTE_TEMPLATES = [
   'Dog on premises',
 ]
 
+const INVESTIGATION_NOTE_TEMPLATES = [
+  'Seal intact',
+  'Seal replaced',
+  'No tampering visible',
+  'Bypass pipe detected',
+  'Display appears altered',
+  'Physical damage noted',
+]
+
 // ── Photo compression ─────────────────────────────────────────────────────────
 async function compressPhoto(dataUrl: string): Promise<string> {
   return new Promise(resolve => {
@@ -81,7 +90,7 @@ export default function ReadingEntry({
 
   const [currentValue, setCurrentValue]     = useState(() => String(d.currentValue ?? ''))
   const [notes, setNotes]                   = useState(() => String(d.notes ?? ''))
-  const [showNotes, setShowNotes]           = useState(() => Boolean(d.notes))
+  const [showNotes, setShowNotes]           = useState(() => Boolean(d.notes) || meter.status === 'under_investigation')
   const [sealNumber, setSealNumber]         = useState(() => String(d.sealNumber ?? ''))
   const [tampered, setTampered]             = useState(() => Boolean(d.tampered ?? false))
   const [photo, setPhoto]                   = useState<string | null>(null)
@@ -99,6 +108,7 @@ export default function ReadingEntry({
   const [photoScale, setPhotoScale]         = useState(1)
   const [callStatus, setCallStatus]         = useState<'idle' | 'calling' | 'ok' | 'err'>('idle')
   const [callMessage, setCallMessage]       = useState('')
+  const [checks, setChecks]                 = useState({ seal: false, bypass: false, area: false })
   const photoInputRef   = useRef<HTMLInputElement>(null)
   const advancedRef     = useRef(false)
   const touchStartXRef  = useRef(0)
@@ -256,6 +266,11 @@ export default function ReadingEntry({
   }
 
   const isUnderInvestigation = meter.status === 'under_investigation'
+  const userRole: string = (() => {
+    try { return JSON.parse(localStorage.getItem('meter_user') ?? '{}').role ?? '' } catch { return '' }
+  })()
+  const isFieldTech = userRole === 'field_technician'
+  const checklistComplete = !isFieldTech || !isUnderInvestigation || Object.values(checks).every(Boolean)
 
   // ── Submit → open confirmation (or skip if preference set) ──────────────────
   function handleSubmitClick(e: React.FormEvent) {
@@ -267,6 +282,10 @@ export default function ReadingEntry({
     }
     if (isUnderInvestigation && !photo) {
       setError('Photo is required — this meter is under investigation')
+      return
+    }
+    if (!checklistComplete) {
+      setError('Complete the investigation checklist before submitting')
       return
     }
     setError('')
@@ -388,6 +407,16 @@ export default function ReadingEntry({
               </div>
             </div>
 
+            {isUnderInvestigation && (
+              <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5">
+                <p className="text-sm font-bold text-amber-800">⚠ Meter Under Investigation</p>
+                {meter.investigation_reason && (
+                  <p className="text-xs text-amber-700 mt-1">{meter.investigation_reason}</p>
+                )}
+                <p className="text-xs text-amber-700 mt-1 font-medium">Confirm you have documented all evidence before submitting.</p>
+              </div>
+            )}
+
             {isAnomaly && (
               <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3.5">
                 <p className="text-sm font-bold text-orange-800">⚠ Unusually high consumption</p>
@@ -443,9 +472,9 @@ export default function ReadingEntry({
       )}
 
       {/* ── Header ───────────────────────────────────────────────────────────── */}
-      <div className="bg-green-600 text-white px-4 pt-12 pb-5">
+      <div className={`${isUnderInvestigation ? 'bg-amber-600' : 'bg-green-600'} text-white px-4 pt-12 pb-5`}>
         <div className="flex items-center justify-between mb-2">
-          <button onClick={onBack} className="flex items-center gap-1 text-green-200 text-sm active:text-white">
+          <button onClick={onBack} className={`flex items-center gap-1 ${isUnderInvestigation ? 'text-amber-200' : 'text-green-200'} text-sm active:text-white`}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -471,11 +500,14 @@ export default function ReadingEntry({
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-white/20 text-white">Smart</span>
           )}
         </div>
-        <p className="text-green-200 text-sm mt-0.5">
+        <p className={`${isUnderInvestigation ? 'text-amber-200' : 'text-green-200'} text-sm mt-0.5`}>
           #{meter.meter_number} · {formatPeriod(period)}
-          {gps && <span className="ml-2 text-green-300">· GPS ✓{gps.accuracy ? ` ±${Math.round(gps.accuracy)}m` : ''}</span>}
+          {gps && <span className={`ml-2 ${isUnderInvestigation ? 'text-amber-300' : 'text-green-300'}`}>· GPS ✓{gps.accuracy ? ` ±${Math.round(gps.accuracy)}m` : ''}</span>}
         </p>
-        {meter.meter_type === 'smart' && (
+        {isUnderInvestigation && (
+          <p className="text-amber-200 text-xs mt-0.5 font-semibold">⚠ Under Investigation — photo + checklist required</p>
+        )}
+        {meter.meter_type === 'smart' && !isUnderInvestigation && (
           <p className="text-green-300 text-xs mt-0.5">AMR / Auto-read meter — confirm display value</p>
         )}
       </div>
@@ -610,7 +642,10 @@ export default function ReadingEntry({
           {/* Photo */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Meter Photo <span className="font-normal text-gray-400">(optional)</span>
+              Meter Photo{isUnderInvestigation
+                ? <span className="text-red-500 font-bold"> * required</span>
+                : <span className="font-normal text-gray-400"> (optional)</span>
+              }
             </label>
             <input
               ref={photoInputRef}
@@ -650,7 +685,11 @@ export default function ReadingEntry({
               <button
                 type="button"
                 onClick={() => photoInputRef.current?.click()}
-                className="w-full border-2 border-dashed border-gray-200 rounded-xl py-5 flex flex-col items-center gap-1.5 text-gray-400 active:border-green-400 active:text-green-600 transition-colors"
+                className={`w-full border-2 border-dashed rounded-xl py-5 flex flex-col items-center gap-1.5 transition-colors ${
+                  isUnderInvestigation
+                    ? 'border-orange-400 text-orange-500 active:border-orange-600 active:text-orange-700'
+                    : 'border-gray-200 text-gray-400 active:border-green-400 active:text-green-600'
+                }`}
               >
                 <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -729,7 +768,7 @@ export default function ReadingEntry({
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Note</label>
               <div className="flex flex-wrap gap-1.5 mb-2">
-                {NOTE_TEMPLATES.map(t => (
+                {(isUnderInvestigation ? INVESTIGATION_NOTE_TEMPLATES : NOTE_TEMPLATES).map(t => (
                   <button
                     key={t}
                     type="button"
@@ -765,6 +804,41 @@ export default function ReadingEntry({
             <p className="text-center text-xs text-orange-600 font-medium">
               Offline — reading will be saved and synced when connected
             </p>
+          )}
+
+          {/* ── Field technician investigation checklist ──────────────────── */}
+          {isFieldTech && isUnderInvestigation && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+              <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Investigation Checklist</p>
+              {([
+                ['seal',   'Seal condition checked and documented'],
+                ['bypass', 'Area inspected for bypass pipes or diversions'],
+                ['area',   'Surrounding area and connections photographed'],
+              ] as [keyof typeof checks, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setChecks(c => ({ ...c, [key]: !c[key] }))}
+                  className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-left transition-colors ${
+                    checks[key] ? 'bg-green-100 text-green-800' : 'bg-white text-gray-600'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                    checks[key] ? 'bg-green-600 border-green-600 text-white' : 'border-gray-300'
+                  }`}>
+                    {checks[key] && (
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </span>
+                  {label}
+                </button>
+              ))}
+              {!checklistComplete && (
+                <p className="text-[10px] text-amber-600 pt-1">Complete all checks before submitting.</p>
+              )}
+            </div>
           )}
 
           {success ? (
@@ -887,6 +961,13 @@ export default function ReadingEntry({
                 Records the previous reading ({meter.last_reading ?? 0}) with an inaccessible note.
                 {notes.trim() && ` Your note "${notes.trim()}" will be included.`}
               </p>
+              {isUnderInvestigation && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                  <p className="text-xs text-red-700 font-semibold">
+                    ⚠ This meter is under investigation — notify your supervisor immediately. Do not leave without reporting this.
+                  </p>
+                </div>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => void handleInaccessible()}
