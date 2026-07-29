@@ -540,6 +540,16 @@ export default function ReadingEntry({
             <span className="capitalize">{meter.utility_type.replace('_', ' ')}</span>
           </p>
 
+          {(() => {
+            const lastNote = history.find(r => r.notes)?.notes
+            return lastNote ? (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Last note</p>
+                <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-2.5 py-1.5">{lastNote}</p>
+              </div>
+            ) : null
+          })()}
+
           {history.length >= 2 && (
             <div className="mt-3 pt-3 border-t border-gray-100">
               <p className="text-xs text-gray-400 mb-1.5">Last {Math.min(history.length, 6)} readings</p>
@@ -704,6 +714,15 @@ export default function ReadingEntry({
           {storageWarning && (
             <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
               <p className="text-xs text-orange-700 font-medium">⚠ Device storage is nearly full. Sync offline readings to free space.</p>
+            </div>
+          )}
+
+          {gps && gps.accuracy > 50 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-3 py-2">
+              <p className="text-xs text-yellow-700 font-medium">
+                ⚠ Weak GPS signal (±{Math.round(gps.accuracy)}m) — recorded location may be imprecise
+                {isUnderInvestigation && '. Move to open sky for better accuracy before submitting.'}
+              </p>
             </div>
           )}
 
@@ -875,17 +894,22 @@ export default function ReadingEntry({
             {showHistory && (
               <div className="border-t border-gray-100 divide-y divide-gray-50">
                 {history.slice(0, 8).map((r, i) => (
-                  <div key={r.id ?? i} className="flex items-center px-4 py-2.5">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-400">{formatPeriodShort(r.billing_period)}</p>
-                      <p className="text-sm font-bold text-gray-900">{Number(r.current_value).toLocaleString()}</p>
+                  <div key={r.id ?? i} className="px-4 py-2.5">
+                    <div className="flex items-center">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-400">{formatPeriodShort(r.billing_period)}</p>
+                        <p className="text-sm font-bold text-gray-900">{Number(r.current_value).toLocaleString()}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-sm font-semibold ${r.units_consumed > 0 ? 'text-gray-700' : 'text-gray-300'}`}>
+                          {r.units_consumed > 0 ? `${Number(r.units_consumed).toFixed(1)} units` : '—'}
+                        </p>
+                        <p className="text-xs text-gray-400 capitalize">{r.source ?? 'manual'}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-semibold ${r.units_consumed > 0 ? 'text-gray-700' : 'text-gray-300'}`}>
-                        {r.units_consumed > 0 ? `${Number(r.units_consumed).toFixed(1)} units` : '—'}
-                      </p>
-                      <p className="text-xs text-gray-400 capitalize">{r.source ?? 'manual'}</p>
-                    </div>
+                    {r.notes && (
+                      <p className="text-[10px] text-blue-600 mt-0.5 truncate" title={r.notes}>📝 {r.notes}</p>
+                    )}
                   </div>
                 ))}
               </div>

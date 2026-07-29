@@ -224,6 +224,7 @@ export interface MeterReadingHistory {
   units_consumed: number
   source: string | null
   status: string
+  notes?: string | null
 }
 
 // In-memory cache so prefetching next meter's history feels instant

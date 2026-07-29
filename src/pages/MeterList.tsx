@@ -69,8 +69,12 @@ export default function MeterList({
   const [loading, setLoading]             = useState(true)
   const [error, setError]                 = useState('')
   const [pending, setPending]             = useState(0)
-  const [query, setQuery]                 = useState('')
-  const [utilityFilter, setUtilityFilter] = useState<string>('all')
+  const [query, setQuery]                 = useState<string>(() => {
+    try { return localStorage.getItem(`pwa_query_${period}`) ?? '' } catch { return '' }
+  })
+  const [utilityFilter, setUtilityFilter] = useState<string>(() => {
+    try { return localStorage.getItem(`pwa_filter_${period}`) ?? 'all' } catch { return 'all' }
+  })
   const [elapsed, setElapsed]             = useState(0)
   const [pullProgress, setPullProgress]   = useState(0)
   const [lastSynced, setLastSynced]       = useState<Date | null>(null)
@@ -80,6 +84,7 @@ export default function MeterList({
   const [isOnline, setIsOnline]           = useState(() => navigator.onLine)
   const [syncing, setSyncing]             = useState(false)
   const [visibleCount, setVisibleCount]   = useState(50)
+  const [syncedCount, setSyncedCount]     = useState(0)
   const completedAt                       = useRef<number | null>(null)
   const sentinelRef                       = useRef<HTMLDivElement>(null)
   const filteredLenRef                    = useRef(0)
@@ -104,6 +109,11 @@ export default function MeterList({
   }
   function cancelLongPress() {
     if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null }
+  }
+
+  function skipMeter(m: UnreadMeter) {
+    setMeters(prev => [...prev.filter(x => x.id !== m.id), m])
+    setInaccessibleTarget(null)
   }
 
   async function confirmInaccessible(m: UnreadMeter) {
@@ -237,10 +247,27 @@ export default function MeterList({
   async function handleSyncNow() {
     if (syncing || !navigator.onLine) return
     setSyncing(true)
+    const before = await countPending()
     await syncPendingWithProgress(() => {}, () => {})
-    setPending(await countPending())
+    const after = await countPending()
+    setPending(after)
     setSyncing(false)
+    const synced = before - after
+    if (synced > 0) {
+      setSyncedCount(synced)
+      setTimeout(() => setSyncedCount(0), 3500)
+    }
   }
+
+  // Persist search/filter so they survive back-navigation
+  useEffect(() => {
+    if (query) localStorage.setItem(`pwa_query_${period}`, query)
+    else localStorage.removeItem(`pwa_query_${period}`)
+  }, [query, period])
+  useEffect(() => {
+    if (utilityFilter !== 'all') localStorage.setItem(`pwa_filter_${period}`, utilityFilter)
+    else localStorage.removeItem(`pwa_filter_${period}`)
+  }, [utilityFilter, period])
 
   // Reset visible count when search/filter changes
   useEffect(() => { setVisibleCount(50) }, [query, utilityFilter])
@@ -391,6 +418,16 @@ export default function MeterList({
   return (
     <div className={`flex flex-col min-h-screen bg-gray-50${hcClass}`}>
 
+      {/* Sync summary toast */}
+      {syncedCount > 0 && (
+        <div className="fixed bottom-6 left-4 right-4 z-50 bg-green-600 text-white rounded-2xl px-5 py-3.5 shadow-xl flex items-center gap-3 animate-fade-in">
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
+          <p className="text-sm font-semibold">{syncedCount} reading{syncedCount !== 1 ? 's' : ''} synced successfully</p>
+        </div>
+      )}
+
       {/* Quick-inaccessible confirmation overlay */}
       {inaccessibleTarget && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end">
@@ -401,7 +438,13 @@ export default function MeterList({
             <p className="text-xs text-gray-400">
               Previous reading ({inaccessibleTarget.last_reading ?? 0}) will be submitted with an inaccessible note.
             </p>
-            <div className="flex gap-3 pt-1">
+            <button
+              onClick={() => skipMeter(inaccessibleTarget)}
+              className="w-full border-2 border-blue-200 text-blue-700 rounded-2xl py-3 font-semibold text-sm"
+            >
+              Skip — come back later
+            </button>
+            <div className="flex gap-3">
               <button
                 onClick={() => { cancelLongPress(); setInaccessibleTarget(null) }}
                 className="flex-1 border-2 border-gray-200 text-gray-700 rounded-2xl py-3 font-semibold"
@@ -413,7 +456,7 @@ export default function MeterList({
                 disabled={inaccessibleLoading}
                 className="flex-1 bg-orange-500 text-white rounded-2xl py-3 font-semibold disabled:opacity-50"
               >
-                {inaccessibleLoading ? 'Saving…' : 'Confirm'}
+                {inaccessibleLoading ? 'Saving…' : 'Mark inaccessible'}
               </button>
             </div>
           </div>

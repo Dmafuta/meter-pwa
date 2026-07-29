@@ -246,10 +246,16 @@ export default function SupervisorDashboard({
                         const pct = progress.total_active_meters > 0
                           ? Math.round((r.read_count / progress.total_active_meters) * 100)
                           : 0
+                        const isOnline = onlineDevices.some(d =>
+                          d.user_name?.toLowerCase() === r.reader_name.toLowerCase()
+                        )
                         return (
                           <div key={r.reader_name} className="px-4 py-3">
                             <div className="flex items-center justify-between mb-1.5">
-                              <span className="text-sm font-medium text-gray-700">{r.reader_name}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`} title={isOnline ? 'Online' : 'Offline'} />
+                                <span className="text-sm font-medium text-gray-700">{r.reader_name}</span>
+                              </div>
                               <span className="text-sm font-bold text-indigo-600">{r.read_count} read</span>
                             </div>
                             <div className="w-full bg-gray-100 rounded-full h-1.5">
