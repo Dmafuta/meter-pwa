@@ -57,6 +57,11 @@ export default function MeterList({
   onGoToDashboard?: () => void
   onLogout: () => void
 }) {
+  const userRole: string = (() => {
+    try { return JSON.parse(localStorage.getItem('meter_user') ?? '{}').role ?? '' } catch { return '' }
+  })()
+  const isFieldTech = userRole === 'field_technician'
+
   const [meters, setMeters]               = useState<UnreadMeter[]>([])
   const [readMeters, setReadMeters]       = useState<ReadMeter[]>([])
   const [hasAssignments, setHasAssignments] = useState(false)
@@ -714,6 +719,7 @@ export default function MeterList({
                 const days = daysSince(m.last_reading_date)
                 const isOverdue = days !== null && days > 35
                 const isSmart = m.meter_type === 'smart'
+                const isUnderInvestigation = m.status === 'under_investigation'
                 return (
                   <button
                     key={m.id}
@@ -727,7 +733,7 @@ export default function MeterList({
                     onMouseDown={() => { if (!isSmart) startLongPress(m) }}
                     onMouseUp={cancelLongPress}
                     onMouseLeave={cancelLongPress}
-                    className="w-full bg-white rounded-xl shadow-sm p-4 text-left active:bg-gray-50 flex items-center gap-3 select-none"
+                    className={`w-full rounded-xl shadow-sm p-4 text-left active:bg-gray-50 flex items-center gap-3 select-none ${isUnderInvestigation ? 'bg-orange-50 border border-orange-200' : 'bg-white'}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -740,6 +746,9 @@ export default function MeterList({
                         )}
                         {m.last_reading_source === 'estimated' && (
                           <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Est.</span>
+                        )}
+                        {isUnderInvestigation && (
+                          <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">⚠ Investigation</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
@@ -754,6 +763,9 @@ export default function MeterList({
                       </div>
                       {isSmart && (
                         <p className="text-[10px] text-indigo-500 mt-0.5">Auto-read · tap to inspect</p>
+                      )}
+                      {isUnderInvestigation && isFieldTech && m.investigation_reason && (
+                        <p className="text-[10px] text-orange-600 mt-0.5 truncate">Reason: {m.investigation_reason}</p>
                       )}
                     </div>
                     <svg className="w-5 h-5 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
