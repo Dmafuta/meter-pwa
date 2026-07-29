@@ -123,14 +123,15 @@ export default function MeterList({
     return () => clearInterval(interval)
   }, [sessionStart])
 
-  // Online/offline tracking
+  // Online/offline tracking — also refresh meter list when connection is restored
   useEffect(() => {
-    const on  = () => setIsOnline(true)
+    const on  = () => { setIsOnline(true); void load(period) }
     const off = () => setIsOnline(false)
     window.addEventListener('online',  on)
     window.addEventListener('offline', off)
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period])
 
   // IDs of meters that are queued locally for this period (submitted but not yet synced)
   async function getPendingMeterIds(p: string): Promise<Set<string>> {

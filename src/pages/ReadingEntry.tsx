@@ -104,10 +104,7 @@ export default function ReadingEntry({
   const touchStartXRef  = useRef(0)
   const pinchRef        = useRef({ startDist: 0, startScale: 1 })
 
-  // ── Auto-flag tampered for meters under investigation ─────────────────────
-  useEffect(() => {
-    if (meter.status === 'under_investigation') setTampered(true)
-  }, [meter.status])
+  // Investigation meters: reader decides tamper status based on evidence collected
 
   // ── Screen Wake Lock — keep display on while reading ──────────────────────
   useEffect(() => {
