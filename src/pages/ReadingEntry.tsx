@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { submitReading, getReadingHistory, initiateCall, type UnreadMeter, type MeterReadingHistory } from '../api'
-import { queueReading, loadHistoryCache } from '../db'
+import { queueReading, loadHistoryCache, loadMeterCache, saveMeterCache } from '../db'
 
 // ── Quick-pick note templates ─────────────────────────────────────────────────
 const NOTE_TEMPLATES = [
@@ -306,6 +306,14 @@ export default function ReadingEntry({
           sealNumber: sealNumber || undefined, tampered: tampered || undefined,
           queuedAt: Date.now(),
         })
+        // Immediately remove this meter from the cached list so it won't reappear
+        // on return to the meter list while still offline
+        loadMeterCache(period).then(cached => {
+          if (cached) {
+            const updated = (cached.meters as { id: string }[]).filter(m => m.id !== meter.id)
+            void saveMeterCache(period, updated)
+          }
+        }).catch(() => {})
         localStorage.removeItem(draftKey)
         setSuccess(true)
         navigator.vibrate?.(200)

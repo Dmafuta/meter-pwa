@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getUnreadMeters, getReadMeters, getMyAssignments, submitReading, type UnreadMeter, type ReadMeter } from '../api'
-import { countPending, queueReading, saveMeterCache, loadMeterCache } from '../db'
+import { countPending, queueReading, saveMeterCache, loadMeterCache, listPending } from '../db'
 import { syncPendingWithProgress } from '../sync'
 
 const UTILITY_BADGE: Record<string, string> = {
@@ -132,11 +132,21 @@ export default function MeterList({
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
 
+  // IDs of meters that are queued locally for this period (submitted but not yet synced)
+  async function getPendingMeterIds(p: string): Promise<Set<string>> {
+    const pending = await listPending().catch(() => [])
+    return new Set(pending.filter(r => r.billingPeriod === p).map(r => r.meterId))
+  }
+
   // Hydrate from cache immediately — before the network fetch arrives
   useEffect(() => {
-    loadMeterCache(period).then(cached => {
+    loadMeterCache(period).then(async cached => {
       if (cached && cached.meters.length > 0) {
-        setMeters(cached.meters as UnreadMeter[])
+        const queued = await getPendingMeterIds(period)
+        const meters = queued.size > 0
+          ? (cached.meters as UnreadMeter[]).filter(m => !queued.has(m.id))
+          : (cached.meters as UnreadMeter[])
+        setMeters(meters)
         setLoading(false)
       }
     }).catch(() => {})
@@ -164,8 +174,13 @@ export default function MeterList({
         displayMeters = unread
         setHasAssignments(false)
       }
-      setMeters(displayMeters)
-      // Persist to cache for offline use
+      // Exclude meters already in the local pending queue (submitted offline, not yet synced)
+      const queued = await getPendingMeterIds(period)
+      const visibleMeters = queued.size > 0
+        ? displayMeters.filter(m => !queued.has(m.id))
+        : displayMeters
+      setMeters(visibleMeters)
+      // Persist to cache for offline use (save full server list — pending filter applied on display)
       void saveMeterCache(period, displayMeters)
       // Record when all meters were first completed
       if (unread.length === 0 && completedAt.current === null) {
