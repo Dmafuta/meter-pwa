@@ -686,10 +686,15 @@ export default function MeterList({
             <button onClick={() => void load()} className="text-green-600 font-medium">Retry</button>
           </div>
         ) : meters.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-5xl mb-4">✓</div>
-            <p className="font-semibold text-gray-900 text-lg">All meters read!</p>
-            <p className="text-sm text-gray-500 mt-1">No unread meters for {formatPeriod(period)}</p>
+          <div className="text-center py-16 px-6">
+            <div className="text-5xl mb-4">📋</div>
+            <p className="font-semibold text-gray-900 text-lg">Reading cycle complete</p>
+            <p className="text-sm text-gray-500 mt-1">
+              All meters have been read for {formatPeriod(period)}.
+            </p>
+            <p className="text-xs text-gray-400 mt-3">
+              Contact your supervisor if you believe meters are missing.
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
