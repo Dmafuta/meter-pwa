@@ -25,6 +25,15 @@ function getStoredRole(): string {
 const SUPERVISOR_ROLES = ['supervisor', 'meter_supervisor', 'facility_manager', 'admin']
 
 export default function App() {
+  // Dismiss splash screen on first render
+  useEffect(() => {
+    const splash = document.getElementById('splash')
+    if (!splash) return
+    splash.classList.add('splash-hide')
+    const t = setTimeout(() => splash.remove(), 350)
+    return () => clearTimeout(t)
+  }, [])
+
   const [page, setPage]               = useState<Page>(() =>
     localStorage.getItem('meter_token') ? 'period' : 'login'
   )

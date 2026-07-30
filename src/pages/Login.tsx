@@ -1,6 +1,22 @@
 import { useState, useRef, useEffect } from 'react'
-import { Gauge, Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react'
 import { loginForToken } from '../api'
+
+function LogoMark({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <rect width="100" height="100" rx="22" fill="rgba(255,255,255,0.15)"/>
+      <path d="M 30 80 A 28 28 0 1 1 70 80" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="5.5" strokeLinecap="round"/>
+      <path d="M 30 80 A 28 28 0 1 1 73 42" fill="none" stroke="white" strokeWidth="5.5" strokeLinecap="round"/>
+      <line x1="24" y1="47" x2="30" y2="50" stroke="rgba(255,255,255,0.55)" strokeWidth="2" strokeLinecap="round"/>
+      <line x1="50" y1="30" x2="50" y2="36" stroke="rgba(255,255,255,0.55)" strokeWidth="2" strokeLinecap="round"/>
+      <line x1="76" y1="47" x2="70" y2="50" stroke="rgba(255,255,255,0.55)" strokeWidth="2" strokeLinecap="round"/>
+      <line x1="50" y1="58" x2="68" y2="45" stroke="white" strokeWidth="3.5" strokeLinecap="round"/>
+      <circle cx="50" cy="58" r="5" fill="white"/>
+      <circle cx="50" cy="58" r="2.5" fill="rgba(255,255,255,0.5)"/>
+    </svg>
+  )
+}
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
   const [email, setEmail]             = useState(() => localStorage.getItem('meter_remembered_email') ?? '')
@@ -54,7 +70,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         <div className="relative">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 text-white ring-1 ring-white/20">
-              <Gauge className="h-5 w-5" strokeWidth={2.25} />
+              <LogoMark size={20} />
             </div>
             <div className="leading-tight">
               <p className="text-[15px] font-semibold text-white">Meter Reader</p>
@@ -110,7 +126,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
                 className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white"
                 style={{ background: 'var(--gradient-brand)', boxShadow: 'var(--shadow-brand)' }}
               >
-                <Gauge className="h-5 w-5" strokeWidth={2.25} />
+                <LogoMark size={20} />
               </div>
               <div className="min-w-0 leading-tight">
                 <p className="text-[15px] font-semibold text-ink">Meter Reader</p>

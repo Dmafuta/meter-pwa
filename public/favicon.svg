@@ -1,4 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="20" fill="#16a34a"/>
-  <text y="78" x="12" font-size="72" fill="white">⚡</text>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#14532d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="100" height="100" rx="22" fill="url(#g)"/>
+
+  <!-- Gauge track (full arc, dimmed) -->
+  <path d="M 30 80 A 28 28 0 1 1 70 80"
+    fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="5.5" stroke-linecap="round"/>
+
+  <!-- Gauge active fill (~70%) -->
+  <path d="M 30 80 A 28 28 0 1 1 73 42"
+    fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+
+  <!-- Tick marks at 25 / 50 / 75 % -->
+  <line x1="24" y1="47" x2="30" y2="50" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round"/>
+  <line x1="50" y1="30" x2="50" y2="36" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round"/>
+  <line x1="76" y1="47" x2="70" y2="50" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Needle -->
+  <line x1="50" y1="58" x2="68" y2="45" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Centre cap -->
+  <circle cx="50" cy="58" r="5" fill="white"/>
+  <circle cx="50" cy="58" r="2.5" fill="#15803d"/>
 </svg>
