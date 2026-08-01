@@ -22,6 +22,7 @@ export interface PendingReading {
   queuedAt: number
   failCount: number
   lastError?: string
+  idempotencyKey?: string  // UUID generated at queue time; sent as Idempotency-Key header
 }
 
 export interface ConflictReading {
@@ -67,10 +68,10 @@ function openDb() {
 
 const db = openDb()
 
-export async function queueReading(r: Omit<PendingReading, 'id' | 'failCount'>): Promise<void> {
+export async function queueReading(r: Omit<PendingReading, 'id' | 'failCount' | 'idempotencyKey'>): Promise<void> {
   const store = await db
   if (!store) return
-  await store.add(STORE, { ...r, failCount: 0 })
+  await store.add(STORE, { ...r, failCount: 0, idempotencyKey: crypto.randomUUID() })
   // Register a background sync tag so the OS can wake the service worker
   // when connectivity is restored, even if the app is not open.
   navigator.serviceWorker?.ready

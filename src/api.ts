@@ -144,11 +144,12 @@ export function submitReading(
   latitude?: number,
   longitude?: number,
   sealNumber?: string,
-  tampered?: boolean
+  tampered?: boolean,
+  idempotencyKey?: string
 ): Promise<unknown> {
   return apiFetch(`/meters/${meterId}/readings`, {
     method: 'POST',
-    headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+    headers: { 'X-Idempotency-Key': idempotencyKey ?? crypto.randomUUID() },
     body: JSON.stringify({
       current_value: currentValue,
       billing_period: billingPeriod,
