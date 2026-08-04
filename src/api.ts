@@ -95,10 +95,14 @@ export interface AuthUser {
   role: string
 }
 
+export type LoginTokenResponse =
+  | { requiresTwoFactor: true; maskedContact: string }
+  | { requiresTwoFactor?: false; token: string; refreshToken?: string; user: AuthUser }
+
 export async function loginForToken(
   email: string,
   password: string
-): Promise<{ token: string; refreshToken?: string; user: AuthUser }> {
+): Promise<LoginTokenResponse> {
   const res = await fetch(BASE + '/auth/login-token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -106,6 +110,20 @@ export async function loginForToken(
   })
   const json = await res.json()
   if (!res.ok) throw new Error(json.message ?? 'Login failed')
+  return json.data
+}
+
+export async function verifyOtpForToken(
+  email: string,
+  code: string
+): Promise<{ token: string; refreshToken?: string; user: AuthUser }> {
+  const res = await fetch(BASE + '/auth/verify-otp-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code })
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.message ?? 'Invalid code')
   return json.data
 }
 

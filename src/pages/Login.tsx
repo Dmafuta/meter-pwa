@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react'
-import { loginForToken } from '../api'
+import { Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, KeyRound } from 'lucide-react'
+import { loginForToken, verifyOtpForToken } from '../api'
 
 function LogoMark({ size = 20 }: { size?: number }) {
   return (
@@ -19,34 +19,71 @@ function LogoMark({ size = 20 }: { size?: number }) {
 }
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
-  const [email, setEmail]             = useState(() => localStorage.getItem('meter_remembered_email') ?? '')
-  const [password, setPassword]       = useState('')
+  const [email, setEmail]               = useState(() => localStorage.getItem('meter_remembered_email') ?? '')
+  const [password, setPassword]         = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading]         = useState(false)
-  const [error, setError]             = useState('')
+  const [loading, setLoading]           = useState(false)
+  const [error, setError]               = useState('')
+
+  // 2FA step
+  const [twoFactorEmail, setTwoFactorEmail]     = useState('')
+  const [maskedContact, setMaskedContact]       = useState('')
+  const [otp, setOtp]                           = useState('')
 
   const emailRef    = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
+  const otpRef      = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const t = setTimeout(() => emailRef.current?.focus(), 200)
     return () => clearTimeout(t)
   }, [])
 
+  useEffect(() => {
+    if (twoFactorEmail) {
+      const t = setTimeout(() => otpRef.current?.focus(), 200)
+      return () => clearTimeout(t)
+    }
+  }, [twoFactorEmail])
+
+  function finishLogin(token: string, refreshToken: string | undefined, user: import('../api').AuthUser) {
+    localStorage.setItem('meter_token', token)
+    if (refreshToken) localStorage.setItem('meter_refresh_token', refreshToken)
+    const normalizedUser = { ...user, role: user.role.toLowerCase().replace(/\s+/g, '_') }
+    localStorage.setItem('meter_user', JSON.stringify(normalizedUser))
+    localStorage.setItem('meter_remembered_email', email.trim() || twoFactorEmail)
+    onLogin()
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const { token, refreshToken, user } = await loginForToken(email.trim(), password)
-      localStorage.setItem('meter_token', token)
-      if (refreshToken) localStorage.setItem('meter_refresh_token', refreshToken)
-      const normalizedUser = { ...user, role: user.role.toLowerCase().replace(/\s+/g, '_') }
-      localStorage.setItem('meter_user', JSON.stringify(normalizedUser))
-      localStorage.setItem('meter_remembered_email', email.trim())
-      onLogin()
+      const result = await loginForToken(email.trim(), password)
+      if (result.requiresTwoFactor) {
+        setTwoFactorEmail(email.trim())
+        setMaskedContact(result.maskedContact)
+        setPassword('')
+      } else {
+        finishLogin(result.token, result.refreshToken, result.user)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleOtpSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      const { token, refreshToken, user } = await verifyOtpForToken(twoFactorEmail, otp.trim())
+      finishLogin(token, refreshToken, user)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid code')
     } finally {
       setLoading(false)
     }
@@ -157,76 +194,133 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
 
             {/* Form */}
             <section className="mt-8 sm:mt-10">
-              <form onSubmit={handleSubmit} className="space-y-6 lg:space-y-5 xl:space-y-6">
-
-                {error && (
-                  <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-[13.5px] text-red-700">
-                    {error}
+              {twoFactorEmail ? (
+                /* ── 2FA OTP step ─────────────────────────────────────── */
+                <form onSubmit={handleOtpSubmit} className="space-y-6 lg:space-y-5 xl:space-y-6">
+                  <div className="rounded-lg bg-primary/8 border border-primary/20 px-4 py-3 text-[13.5px] text-ink">
+                    A verification code was sent to <strong>{maskedContact}</strong>. Enter it below.
                   </div>
-                )}
 
-                <Field
-                  id="email"
-                  label="Email"
-                  icon={<Mail className="h-[18px] w-[18px]" />}
-                  type="email"
-                  inputMode="email"
-                  enterKeyHint="next"
-                  placeholder="you@greatwallgardens.co"
-                  autoComplete="email"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  value={email}
-                  onChange={setEmail}
-                  inputRef={emailRef}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); passwordRef.current?.focus() } }}
-                />
-
-                <Field
-                  id="password"
-                  label="Password"
-                  icon={<Lock className="h-[18px] w-[18px]" />}
-                  type={showPassword ? 'text' : 'password'}
-                  enterKeyHint="go"
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={setPassword}
-                  inputRef={passwordRef}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).form?.requestSubmit() } }}
-                  trailing={
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(v => !v)}
-                      className="grid h-9 w-9 place-items-center rounded-lg text-ink-muted transition hover:bg-muted hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary active:bg-muted"
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword
-                        ? <EyeOff className="h-[18px] w-[18px]" />
-                        : <Eye className="h-[18px] w-[18px]" />}
-                    </button>
-                  }
-                />
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="group relative inline-flex h-[52px] w-full items-center justify-center gap-2 overflow-hidden rounded-xl px-4 text-[15px] font-semibold text-white transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 active:scale-[0.99] disabled:opacity-60 sm:h-[54px] lg:h-[50px] xl:h-[54px]"
-                  style={{ background: 'var(--gradient-brand)', boxShadow: 'var(--shadow-brand)' }}
-                >
-                  {loading ? (
-                    <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                      <span>Signing in…</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Sign in</span>
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </>
+                  {error && (
+                    <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-[13.5px] text-red-700">
+                      {error}
+                    </div>
                   )}
-                </button>
-              </form>
+
+                  <Field
+                    id="otp"
+                    label="Verification code"
+                    icon={<KeyRound className="h-[18px] w-[18px]" />}
+                    type="text"
+                    inputMode="numeric"
+                    enterKeyHint="go"
+                    placeholder="6-digit code"
+                    autoComplete="one-time-code"
+                    value={otp}
+                    onChange={setOtp}
+                    inputRef={otpRef}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).form?.requestSubmit() } }}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={loading || otp.trim().length < 4}
+                    className="group relative inline-flex h-[52px] w-full items-center justify-center gap-2 overflow-hidden rounded-xl px-4 text-[15px] font-semibold text-white transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 active:scale-[0.99] disabled:opacity-60 sm:h-[54px] lg:h-[50px] xl:h-[54px]"
+                    style={{ background: 'var(--gradient-brand)', boxShadow: 'var(--shadow-brand)' }}
+                  >
+                    {loading ? (
+                      <>
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        <span>Verifying…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Verify &amp; sign in</span>
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setTwoFactorEmail(''); setOtp(''); setError('') }}
+                    className="w-full text-center text-[13px] text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+                  >
+                    Back to sign in
+                  </button>
+                </form>
+              ) : (
+                /* ── Password step ────────────────────────────────────── */
+                <form onSubmit={handleSubmit} className="space-y-6 lg:space-y-5 xl:space-y-6">
+                  {error && (
+                    <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-[13.5px] text-red-700">
+                      {error}
+                    </div>
+                  )}
+
+                  <Field
+                    id="email"
+                    label="Email"
+                    icon={<Mail className="h-[18px] w-[18px]" />}
+                    type="email"
+                    inputMode="email"
+                    enterKeyHint="next"
+                    placeholder="you@greatwallgardens.co"
+                    autoComplete="email"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    value={email}
+                    onChange={setEmail}
+                    inputRef={emailRef}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); passwordRef.current?.focus() } }}
+                  />
+
+                  <Field
+                    id="password"
+                    label="Password"
+                    icon={<Lock className="h-[18px] w-[18px]" />}
+                    type={showPassword ? 'text' : 'password'}
+                    enterKeyHint="go"
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={setPassword}
+                    inputRef={passwordRef}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).form?.requestSubmit() } }}
+                    trailing={
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(v => !v)}
+                        className="grid h-9 w-9 place-items-center rounded-lg text-ink-muted transition hover:bg-muted hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary active:bg-muted"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword
+                          ? <EyeOff className="h-[18px] w-[18px]" />
+                          : <Eye className="h-[18px] w-[18px]" />}
+                      </button>
+                    }
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="group relative inline-flex h-[52px] w-full items-center justify-center gap-2 overflow-hidden rounded-xl px-4 text-[15px] font-semibold text-white transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 active:scale-[0.99] disabled:opacity-60 sm:h-[54px] lg:h-[50px] xl:h-[54px]"
+                    style={{ background: 'var(--gradient-brand)', boxShadow: 'var(--shadow-brand)' }}
+                  >
+                    {loading ? (
+                      <>
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        <span>Signing in…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Sign in</span>
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
 
               <div className="mt-5 flex items-center gap-2 text-[11.5px] text-ink-muted">
                 <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
